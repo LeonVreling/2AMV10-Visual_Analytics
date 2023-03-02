@@ -3,6 +3,7 @@
 from dash import Dash, dcc, html, Input, Output
 import dash_bootstrap_components as dbc
 import pandas as pd
+import plotly.express as px
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 
@@ -11,7 +12,7 @@ from spotipy.oauth2 import SpotifyOAuth
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae10bdba19854",
                                                client_secret="77feae55e0b949788ea1e3de052e4230",
                                                redirect_uri="http://localhost:8085/callback/",
-                                               scope="user-library-read"))
+                                               scope="user-library-read, user-top-read"))
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
@@ -19,6 +20,39 @@ app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_
 
 tracks = sp.current_user_saved_tracks()
 track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]} for track in tracks["items"]]
+
+
+top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
+top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "id": track["id"]} for track in top_tracks["items"]]
+app.logger.info(top_tracks)
+
+top_tracks_features = sp.audio_features(tracks=[track["id"] for track in top_tracks])
+app.logger.info(top_tracks_features)
+
+titles = [track["title"] for track in top_tracks]
+artists = [track["artist"] for track in top_tracks]
+tempos = [track["tempo"] for track in top_tracks_features]
+durations = [track["duration_ms"] / 1000 for track in top_tracks_features]
+
+df = pd.DataFrame({
+    "Title": titles,
+    "Artist": artists,
+    "Tempo": tempos,
+    "Duration": durations
+})
+
+fig = px.scatter(df, x="Tempo", y="Duration",
+                 custom_data=["Title", "Artist"],
+                 labels={"Tempo": "Tempo (bpm)", "Duration": "Duration (s)"},
+                 title="Top 10 songs of this month")
+
+fig.update_traces(
+    hovertemplate="<br>".join([
+        "Title: %{customdata[0]}",
+        "Artist: %{customdata[1]}"
+    ])
+)
+
 
 
 app.layout = dbc.Container([
@@ -54,6 +88,21 @@ app.layout = dbc.Container([
 
         dbc.Col([
             html.Div(id="track-info")
+        ])
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            html.Ol([html.Li(children=[track["artist"], " - ", track["title"]]) for track in top_tracks])
+        ])
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
+                id='example-graph',
+                figure=fig
+            )
         ])
     ])
 
