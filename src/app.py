@@ -77,13 +77,13 @@ categories = ["acousticness", "danceability", "energy", "instrumentalness", "liv
 fig_radviz = go.Figure()
 
 fig_radviz.add_trace(go.Scatterpolar(
-      r=[top_tracks_features[index_first_song][category] if category is not "loudness" else 1+top_tracks_features[index_first_song]["loudness"]/60 for category in categories],
+      r=[top_tracks_features[index_first_song][category] if category != "loudness" else 1+top_tracks_features[index_first_song]["loudness"]/60 for category in categories],
       theta=categories,
       fill='toself',
       name= top_tracks[index_first_song]["title"] + " - " + top_tracks[index_first_song]["artist"]
 ))
 fig_radviz.add_trace(go.Scatterpolar(
-      r=[top_tracks_features[index_second_song][category] if category is not "loudness" else 1+top_tracks_features[index_second_song]["loudness"]/60 for category in categories],
+      r=[top_tracks_features[index_second_song][category] if category != "loudness" else 1+top_tracks_features[index_second_song]["loudness"]/60 for category in categories],
       theta=categories,
       fill='toself',
       name= top_tracks[index_second_song]["title"] + " - " + top_tracks[index_second_song]["artist"]
@@ -154,7 +154,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id='example-graph',
+                id='radviz-example-graph',
                 figure=fig_radviz
             )
         ])
