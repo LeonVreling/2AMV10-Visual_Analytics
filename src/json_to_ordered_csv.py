@@ -1,14 +1,20 @@
 import json
 from datetime import datetime 
 import pandas as pd
+from os import listdir
 
 # Initialize an empty list to store dataframes
 dfs = []
 
+FILE_NAME = "data_leon"
+FILE_LOCATION = 'data/{}/'.format(FILE_NAME)
+files = [f for f in listdir(FILE_LOCATION) if f.startswith('endsong_')]
+print(files)
+
 # Opening all JSON file and return as dictionary
-file_names = ['endsong_0.json', 'endsong_1.json', 'endsong_2.json', 'endsong_3.json', 'endsong_4.json']
-for file_name in file_names:
-    with open('endsong_0.json', encoding='utf-8') as f:
+for file in files:
+    print(FILE_LOCATION + file)
+    with open(FILE_LOCATION + file, encoding='utf-8') as f:
         data = json.load(f)
         df_temp = pd.DataFrame.from_dict(data)
         dfs.append(df_temp)
@@ -31,4 +37,4 @@ df = df.sort_values(by=['ts'], ascending=True)
 print(df.head())
 
 # Export the merged DataFrame to a CSV file
-df.to_csv('data_elian.csv', index=False)
+df.to_csv('{}/{}.csv'.format(FILE_LOCATION, FILE_NAME), index=False)
