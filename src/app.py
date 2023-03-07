@@ -99,7 +99,7 @@ fig_radviz.update_layout(
 )
 
 
-### Visualisation of personal listining over time
+### Visualisation of personal listening over time
 # Getting the datasets
 data_files = []
 for data_folder in os.listdir("data"):
@@ -158,7 +158,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id="listining-duration-graph"
+                id="listening-duration-graph"
             )
         ])
     ]),
@@ -219,11 +219,11 @@ def update_track_info(track_id):
     ])
 
 @app.callback(
-    Output("listining-duration-graph", "figure"),
+    Output("listening-duration-graph", "figure"),
     Input("datasets-dropdown", "value"),
     Input("timespan-dropdown", "value")
 )
-def update_duration_listining_graph(path, timespan):
+def update_duration_listening_graph(path, timespan):
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
