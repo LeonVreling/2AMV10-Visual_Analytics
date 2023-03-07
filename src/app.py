@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+import os
 
 
 # Authenticate using the Spotify server
@@ -25,10 +26,8 @@ track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]
 # Top 10 songs of user with graph for tempo and duration
 top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
 top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "id": track["id"]} for track in top_tracks["items"]]
-app.logger.info(top_tracks)
 
 top_tracks_features = sp.audio_features(tracks=[track["id"] for track in top_tracks])
-app.logger.info(top_tracks_features)
 
 titles = [track["title"] for track in top_tracks]
 artists = [track["artist"] for track in top_tracks]
@@ -100,6 +99,18 @@ fig_radviz.update_layout(
 )
 
 
+### Visualisation of personal listining over time
+# Getting the datasets
+data_files = []
+for data_folder in os.listdir("data"):
+    for file in os.listdir("data/{}".format(data_folder)):
+        if file.endswith(".csv"):
+            data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
+
+# Setting the various options for the timespan
+timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "label": "per month"}, {"value": "hour", "label": "per hour of the day"}]
+
+
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
@@ -121,6 +132,38 @@ app.layout = dbc.Container([
             html.Img(src=app.get_asset_url("spotify_logo.png"), style={'width': '100%'})
         ], width=6)
     ]),
+
+    html.Hr(),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Dropdown(
+                id="datasets-dropdown",
+                options=data_files,
+                value=data_files[0]["value"]
+            )
+        ], width=4),
+
+        dbc.Col([
+            dcc.Dropdown(
+                id="timespan-dropdown",
+                options=timespan_options,
+                value=timespan_options[0]["value"]
+            )
+        ], width=4),
+
+        # TODO add filter options, for instance for a specific artist
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
+                id="listining-duration-graph"
+            )
+        ])
+    ]),
+
+    html.Hr(),
 
     dbc.Row([
         dbc.Col([
@@ -174,6 +217,31 @@ def update_track_info(track_id):
         html.H2(track["name"]),
         html.P(track["artists"][0]["name"])
     ])
+
+@app.callback(
+    Output("listining-duration-graph", "figure"),
+    Input("datasets-dropdown", "value"),
+    Input("timespan-dropdown", "value")
+)
+def update_duration_listining_graph(path, timespan):
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    if timespan == "year":
+        df["date"] = df['ts'].str[:-16]
+        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
+        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
+        return px.bar(duration, x='date', y='hours', title='Total duration per year').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+    if timespan == "month":
+        df["date"] = df['ts'].str[:-13]
+        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
+        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
+        return px.bar(duration, x='date', y='hours', title='Total duration per month').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+    if timespan == "hour":
+        df["date"] = df['ts'].str[11:13]
+        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
+        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
+        return px.bar(duration, x='date', y='hours', title='Total duration per hour of the day').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
 
 
 # Run the app
