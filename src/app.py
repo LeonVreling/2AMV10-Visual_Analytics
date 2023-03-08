@@ -153,12 +153,23 @@ app.layout = dbc.Container([
         ], width=4),
 
         dbc.Col([
-            dbc.Input(
-                id="artist-filter",
-                type="text",
-                placeholder="Filter by artist"
+            dbc.RadioItems(
+                id="filter-column",
+                options=[
+                    {"label": "Artist", "value": "master_metadata_album_artist_name"},
+                    {"label": "Song Title", "value": "master_metadata_track_name"}
+                ],
+                value="master_metadata_album_artist_name"
             )
-        ], width=4)
+        ], width=1),
+
+        dbc.Col([
+            dbc.Input(
+                id="filter-value",
+                type="text",
+                placeholder="Filter"
+            )
+        ], width=3)
 
     ]),
 
@@ -229,17 +240,18 @@ def update_track_info(track_id):
     Output("listening-duration-graph", "figure"),
     Input("datasets-dropdown", "value"),
     Input("timespan-dropdown", "value"),
-    Input("artist-filter", "value")
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
 )
-def update_duration_listening_graph(path, timespan, artist):
+def update_duration_listening_graph(path, timespan, filter_column, filter):
 
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
-    if artist is not None:
-        if artist != "":
-            df = df[df['master_metadata_album_artist_name'] == artist]
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
 
     if timespan == "year":
         df["date"] = df['ts'].str[:-16]
