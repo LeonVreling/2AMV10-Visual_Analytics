@@ -33,6 +33,9 @@ print("Afterwards number of rows:", df.shape[0])
 
 # Sort the data by timestamp, example = 'ts': '2021-06-30T10:02:47Z'
 df = df.sort_values(by=['ts'], ascending=True)
+df["month"] = df['ts'].str[0:7]
+df["year"] = df['ts'].str[0:4]
+df["hour"] = df['ts'].str[11:13]
 
 print(df.head())
 
