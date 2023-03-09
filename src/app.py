@@ -178,7 +178,11 @@ app.layout = dbc.Container([
             dcc.Graph(
                 id="listening-duration-graph"
             )
-        ])
+        ], width=9),
+
+        dbc.Col([
+            html.Div(id="top-tracks")
+        ], width=3)
     ]),
 
     html.Hr(),
@@ -238,6 +242,7 @@ def update_track_info(track_id):
 
 @app.callback(
     Output("listening-duration-graph", "figure"),
+    Output("top-tracks", "children"),
     Input("datasets-dropdown", "value"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
@@ -245,6 +250,7 @@ def update_track_info(track_id):
 )
 def update_duration_listening_graph(path, timespan, filter_column, filter):
 
+    # TODO Change function to only load dataset on datasets-dropdown change
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
@@ -253,21 +259,44 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
         if filter != "":
             df = df[df[filter_column] == filter]
 
-    if timespan == "year":
-        df["date"] = df['ts'].str[:-16]
-        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
-        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-        return px.bar(duration, x='date', y='hours', title='Total duration per year').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
-    if timespan == "month":
-        df["date"] = df['ts'].str[:-13]
-        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
-        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-        return px.bar(duration, x='date', y='hours', title='Total duration per month').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
-    if timespan == "hour":
-        df["date"] = df['ts'].str[11:13]
-        duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
-        duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-        return px.bar(duration, x='date', y='hours', title='Total duration per hour of the day').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+    duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
+    duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
+    fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
+                .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
+                .update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+    
+    # Gather the most listened tracks
+    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+    tracks = tracks.drop_duplicates().reset_index(drop=True)
+    tracks['count'] = counts['spotify_track_uri']
+    tracks.sort_values(by=['count'], ascending=False, inplace=True)
+    tracks.reset_index(drop=True, inplace=True)
+    top_tracks = tracks.head(5)
+
+    # Convert the tracks to a nice layout
+    layout = []
+    for index, track in top_tracks.iterrows():
+        app.logger.info(sp.track(track["spotify_track_uri"][14:]))
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        song_tile = dbc.Row([
+            dbc.Col([
+                html.H2("#{}".format(index+1))
+            ], width=2),
+
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=3),
+
+            dbc.Col([
+                html.H4(track["master_metadata_track_name"]),
+                html.Span(track["master_metadata_album_artist_name"])
+            ], width=7)
+        ])
+
+        layout.append(song_tile)
+    
+    return fig, layout
 
 
 # Run the app
