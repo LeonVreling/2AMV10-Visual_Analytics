@@ -240,6 +240,7 @@ def update_track_info(track_id):
         html.P(track["artists"][0]["name"])
     ])
 
+
 @app.callback(
     Output("listening-duration-graph", "figure"),
     Output("top-tracks", "children"),
@@ -264,7 +265,7 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
     fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
                 .update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
-    
+
     # Gather the most listened tracks
     tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
     counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
@@ -277,7 +278,6 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
     # Convert the tracks to a nice layout
     layout = []
     for index, track in top_tracks.iterrows():
-        app.logger.info(sp.track(track["spotify_track_uri"][14:]))
         album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
@@ -295,7 +295,7 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
         ])
 
         layout.append(song_tile)
-    
+
     return fig, layout
 
 
