@@ -7,6 +7,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
+import os
 
 
 # Authenticate using the Spotify server
@@ -25,10 +26,8 @@ track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]
 # Top 10 songs of user with graph for tempo and duration
 top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
 top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "id": track["id"]} for track in top_tracks["items"]]
-app.logger.info(top_tracks)
 
 top_tracks_features = sp.audio_features(tracks=[track["id"] for track in top_tracks])
-app.logger.info(top_tracks_features)
 
 titles = [track["title"] for track in top_tracks]
 artists = [track["artist"] for track in top_tracks]
@@ -100,6 +99,18 @@ fig_radviz.update_layout(
 )
 
 
+### Visualisation of personal listening over time
+# Getting the datasets
+data_files = []
+for data_folder in os.listdir("data"):
+    for file in os.listdir("data/{}".format(data_folder)):
+        if file.endswith(".csv"):
+            data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
+
+# Setting the various options for the timespan
+timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "label": "per month"}, {"value": "hour", "label": "per hour of the day"}]
+
+
 app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
@@ -121,6 +132,60 @@ app.layout = dbc.Container([
             html.Img(src=app.get_asset_url("spotify_logo.png"), style={'width': '100%'})
         ], width=6)
     ]),
+
+    html.Hr(),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Dropdown(
+                id="datasets-dropdown",
+                options=data_files,
+                value=data_files[0]["value"]
+            )
+        ], width=4),
+
+        dbc.Col([
+            dcc.Dropdown(
+                id="timespan-dropdown",
+                options=timespan_options,
+                value=timespan_options[0]["value"]
+            )
+        ], width=4),
+
+        dbc.Col([
+            dbc.RadioItems(
+                id="filter-column",
+                options=[
+                    {"label": "Artist", "value": "master_metadata_album_artist_name"},
+                    {"label": "Song Title", "value": "master_metadata_track_name"}
+                ],
+                value="master_metadata_album_artist_name"
+            )
+        ], width=1),
+
+        dbc.Col([
+            dbc.Input(
+                id="filter-value",
+                type="text",
+                placeholder="Filter"
+            )
+        ], width=3)
+
+    ]),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
+                id="listening-duration-graph"
+            )
+        ], width=9),
+
+        dbc.Col([
+            html.Div(id="top-tracks")
+        ], width=3)
+    ]),
+
+    html.Hr(),
 
     dbc.Row([
         dbc.Col([
@@ -174,6 +239,64 @@ def update_track_info(track_id):
         html.H2(track["name"]),
         html.P(track["artists"][0]["name"])
     ])
+
+
+@app.callback(
+    Output("listening-duration-graph", "figure"),
+    Output("top-tracks", "children"),
+    Input("datasets-dropdown", "value"),
+    Input("timespan-dropdown", "value"),
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
+)
+def update_duration_listening_graph(path, timespan, filter_column, filter):
+
+    # TODO Change function to only load dataset on datasets-dropdown change
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
+
+    duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
+    duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
+    fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
+                .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
+                .update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+
+    # Gather the most listened tracks
+    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+    tracks = tracks.drop_duplicates().reset_index(drop=True)
+    tracks['count'] = counts['spotify_track_uri']
+    tracks.sort_values(by=['count'], ascending=False, inplace=True)
+    tracks.reset_index(drop=True, inplace=True)
+    top_tracks = tracks.head(5)
+
+    # Convert the tracks to a nice layout
+    layout = []
+    for index, track in top_tracks.iterrows():
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        song_tile = dbc.Row([
+            dbc.Col([
+                html.H2("#{}".format(index+1))
+            ], width=2),
+
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=3),
+
+            dbc.Col([
+                html.H4(track["master_metadata_track_name"]),
+                html.Span(track["master_metadata_album_artist_name"])
+            ], width=7)
+        ])
+
+        layout.append(song_tile)
+
+    return fig, layout
 
 
 # Run the app
