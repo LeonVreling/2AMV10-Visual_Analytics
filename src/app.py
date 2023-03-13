@@ -8,6 +8,47 @@ import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
+import numpy as np
+import matplotlib
+import matplotlib.pyplot as plt
+from bokeh.palettes import Colorblind
+from colorhash import ColorHash
+import circlify
+import operator
+
+def get_top_songs(df, month, top):
+    df = df[df['month'] == month].copy()
+    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+    df = df.drop_duplicates().reset_index().drop(columns=['index'])
+    df['count'] = counts['spotify_track_uri']
+    df = df.sort_values(by=['count'], ascending=False)
+    top_tracks = [*df['master_metadata_track_name'][:top]]
+    counts = [*df['count'][:top]]
+    colors = []
+    for i in top_tracks:
+        colors.append(ColorHash(i).hex)
+    
+    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
+    
+    return data
+
+def get_top_artists(df, month, top):
+    df = df[df['month'] == month].copy()
+    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['master_metadata_album_artist_name'].value_counts(sort=False).reset_index()
+    df = df.drop_duplicates(subset='master_metadata_album_artist_name').reset_index().drop(columns=['index'])
+    df['count'] = counts['master_metadata_album_artist_name']
+    df = df.sort_values(by=['count'], ascending=False)
+    top_tracks = [*df['master_metadata_album_artist_name'][:top]]
+    counts = [*df['count'][:top]]
+    colors = []
+    for i in top_tracks:
+        colors.append(ColorHash(i).hex)
+    
+    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
+    
+    return data
 
 
 # Authenticate using the Spotify server
@@ -219,9 +260,33 @@ app.layout = dbc.Container([
                 figure=fig_radviz
             )
         ])
-    ])
+    ]),
 
+    dbc.Row([
+        dbc.Col([
+            dcc.Slider(
+                step=None,
+                updatemode='drag',
+                marks={
+                    1: '2021-01', 
+                    2: '2021-02',
+                    3: '2021-03', 
+                    4: '2021-04', 
+                    5: '2021-05', 
+                    6: '2021-06', 
+                    7: '2021-07', 
+                    8: '2021-08', 
+                    9: '2021-09', 
+                    10: '2021-10', 
+                    11: '2021-11', 
+                    12: '2021-12', 
+                },
+                id='slider-bubble'
+            ), 
 
+            dcc.Graph(id="bubble-graph")
+        ])
+    ]),
 ])
 
 
@@ -268,6 +333,103 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
         duration = df.groupby('date')['ms_played'].sum().reset_index(name = 'Total duration')
         duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
         return px.bar(duration, x='date', y='hours', title='Total duration per hour of the day').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+
+@app.callback(    
+    Output("bubble-graph", "figure"),
+    Input("datasets-dropdown", "value"),
+    Input("slider-bubble", "value"),
+)
+# def update_bubble_graph(path, month):
+#     df = pd.read_csv(path)
+#     top = 9
+#     df["month"] = df['ts'].str[0:7]
+
+#     if len(str(month)) == 1:
+#         month2 = '2021-0' + str(month)
+#     elif len(str(month)) == 2:
+#         month2 = '2021-' + str(month)
+#     if month not in [i for i in range(1,12+1)]:
+#         month2 = '2021-01'
+
+#     data = get_top_songs(df, month2, top)
+#     fig = px.scatter(x=[1, 2, 3, 1, 2, 3, 1, 2, 3], y=[1, 1, 1, 2, 2, 2, 3, 3, 3], 
+#             color=data['colors'], color_discrete_map="identity", 
+#             size=data['counts'], size_max=max(data['counts']), text=data['tracks'])
+#     return fig
+
+def update_bubble_graph(path, month):
+    df = pd.read_csv(path)
+    top = 9
+    df['month'] = df['ts'].str[0:7]
+
+    if len(str(month)) == 1:
+        month2 = '2021-0' + str(month)
+    elif len(str(month)) == 2:
+        month2 = '2021-' + str(month)
+    if month not in [i for i in range(1,12+1)]:
+        month2 = '2021-01'
+
+    data = get_top_artists(df, month2, top)
+
+
+    circles = circlify.circlify(
+        data['counts'], 
+        show_enclosure=False, 
+        target_enclosure=circlify.Circle(x=0, y=0, r=1)
+    )
+
+    child_circle_groups = []
+    for i in range(len(data['counts'])):
+        child_circle_groups.append(circlify.circlify(
+            data['counts'], 
+            show_enclosure=False, 
+            target_enclosure=circlify.Circle(x=circles[i].x, y=circles[i].y, r=circles[i].r)
+        ))
+
+    fig = go.Figure()
+
+    # Set axes properties
+    fig.update_xaxes(
+        range=[-1.05, 1.05], # making slightly wider axes than -1 to 1 so no edge of circles cut-off
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False
+    )
+
+    fig.update_yaxes(
+        range=[-1.05, 1.05],
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+    )
+
+    # add parent circles
+    for idx, circle in enumerate(circles):
+        x, y, r = circle
+        fig.add_shape(type="circle",
+            xref="x", yref="y",
+            x0=x-r, y0=y-r, x1=x+r, y1=y+r,
+            fillcolor=data['colors'][top-1-idx], # fill color if needed
+            line_color="LightSeaGreen",
+            line_width=2,
+        )
+        fig.add_annotation(x=x, y=y,
+                text=data['tracks'][top-1-idx], showarrow=False,
+                yshift=10)
+        
+    # for idx, circle in enumerate(circles):
+    #     x, y, r = circle
+    #     fig.add_annotation(x=x, y=y,
+    #             text=data['tracks'][len(data['tracks'])-idx], showarrow=False,
+    #             yshift=10)
+        
+    # Set figure size
+    fig.update_layout(width=800, height=800, plot_bgcolor="white")
+
+    return fig
+
+
+
 
 
 # Run the app
