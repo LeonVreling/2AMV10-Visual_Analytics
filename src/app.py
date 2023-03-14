@@ -14,7 +14,8 @@ import matplotlib.pyplot as plt
 from bokeh.palettes import Colorblind
 from colorhash import ColorHash
 import circlify
-import operator
+import json
+# import operator
 
 def get_top_songs(df, month, top):
     df = df[df['month'] == month].copy()
@@ -265,29 +266,51 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Slider(
-                step=None,
+                step=1,
                 updatemode='drag',
-                marks={
-                    1: '2021-01', 
-                    2: '2021-02',
-                    3: '2021-03', 
-                    4: '2021-04', 
-                    5: '2021-05', 
-                    6: '2021-06', 
-                    7: '2021-07', 
-                    8: '2021-08', 
-                    9: '2021-09', 
-                    10: '2021-10', 
-                    11: '2021-11', 
-                    12: '2021-12', 
-                },
                 id='slider-bubble'
-            ), 
+            ),
 
             dcc.Graph(id="bubble-graph")
         ])
     ]),
+
+    dcc.Store(id='dataset'),
+    dcc.Store(id='slider-marks')
 ])
+
+
+@app.callback(
+    Output("dataset", "data"),
+    Output("slider-bubble", "min"),
+    Output("slider-bubble", "max"),
+    Output("slider-bubble", "marks"),
+    Output("slider-marks", "data"),
+    Input("datasets-dropdown", "value")
+)
+def load_dataset(path):
+
+    # Load the data set
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    unique_months = df["month"].unique()
+
+    # Compute the slider marks
+    slider_marks = {}
+    for index, month in enumerate(unique_months):
+        slider_marks[index] = month
+
+    # Clean the slider marks to only show one per half year
+    slider_marks_cleaned = {}
+    for key in [*slider_marks]:
+        if key != 0 and key != len(unique_months)-1:
+            if slider_marks[key].endswith("01") or slider_marks[key].endswith("07"):
+                slider_marks_cleaned[key] = slider_marks[key]
+        else:
+            slider_marks_cleaned[key] = slider_marks[key]
+
+    return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
 
 
 @app.callback(
@@ -301,16 +324,17 @@ def update_track_info(track_id):
         html.P(track["artists"][0]["name"])
     ])
 
+
 @app.callback(
     Output("listening-duration-graph", "figure"),
-    Input("datasets-dropdown", "value"),
+    Input("dataset", "data"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
     Input("filter-value", "value")
 )
-def update_duration_listening_graph(path, timespan, filter_column, filter):
+def update_duration_listening_graph(data, timespan, filter_column, filter):
 
-    df = pd.read_csv(path)
+    df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
@@ -334,42 +358,22 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
         duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
         return px.bar(duration, x='date', y='hours', title='Total duration per hour of the day').update_xaxes(title = 'Date', visible = True, showticklabels = True).update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
 
-@app.callback(    
+
+@app.callback(
     Output("bubble-graph", "figure"),
-    Input("datasets-dropdown", "value"),
+    Input("dataset", "data"),
     Input("slider-bubble", "value"),
+    Input("slider-marks", "data")
 )
-# def update_bubble_graph(path, month):
-#     df = pd.read_csv(path)
-#     top = 9
-#     df["month"] = df['ts'].str[0:7]
+def update_bubble_graph(data, month, slider_marks):
 
-#     if len(str(month)) == 1:
-#         month2 = '2021-0' + str(month)
-#     elif len(str(month)) == 2:
-#         month2 = '2021-' + str(month)
-#     if month not in [i for i in range(1,12+1)]:
-#         month2 = '2021-01'
+    slider_marks = json.loads(slider_marks)
+    month = 0 if month is None else month
 
-#     data = get_top_songs(df, month2, top)
-#     fig = px.scatter(x=[1, 2, 3, 1, 2, 3, 1, 2, 3], y=[1, 1, 1, 2, 2, 2, 3, 3, 3], 
-#             color=data['colors'], color_discrete_map="identity", 
-#             size=data['counts'], size_max=max(data['counts']), text=data['tracks'])
-#     return fig
-
-def update_bubble_graph(path, month):
-    df = pd.read_csv(path)
+    df = pd.read_json(data)
     top = 9
-    df['month'] = df['ts'].str[0:7]
 
-    if len(str(month)) == 1:
-        month2 = '2021-0' + str(month)
-    elif len(str(month)) == 2:
-        month2 = '2021-' + str(month)
-    if month not in [i for i in range(1,12+1)]:
-        month2 = '2021-01'
-
-    data = get_top_artists(df, month2, top)
+    data = get_top_artists(df, slider_marks[str(month)], top)
 
 
     circles = circlify.circlify(
@@ -427,9 +431,6 @@ def update_bubble_graph(path, month):
     fig.update_layout(width=800, height=800, plot_bgcolor="white")
 
     return fig
-
-
-
 
 
 # Run the app

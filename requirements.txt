@@ -2,4 +2,7 @@ pandas
 dash
 dash-bootstrap-components
 spotipy
-os
+matplotlib
+bokeh
+colorhash
+circlify
