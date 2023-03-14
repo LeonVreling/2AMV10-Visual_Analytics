@@ -8,14 +8,11 @@ import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
-import numpy as np
-import matplotlib
-import matplotlib.pyplot as plt
-from bokeh.palettes import Colorblind
 from colorhash import ColorHash
 import circlify
 import json
 # import operator
+
 
 def get_top_songs(df, month, top):
     df = df[df['month'] == month].copy()
@@ -33,6 +30,7 @@ def get_top_songs(df, month, top):
     data = {"tracks":top_tracks, "counts":counts, "colors":colors}
     
     return data
+
 
 def get_top_artists(df, month, top):
     df = df[df['month'] == month].copy()
@@ -61,9 +59,11 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 
+
 # Last 20 saved tracks of a user
 tracks = sp.current_user_saved_tracks()
 track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]} for track in tracks["items"]]
+
 
 # Top 10 songs of user with graph for tempo and duration
 top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
@@ -402,7 +402,6 @@ def update_bubble_graph(data, month, slider_marks):
 
     data = get_top_artists(df, slider_marks[str(month)], top)
 
-
     circles = circlify.circlify(
         data['counts'], 
         show_enclosure=False, 
@@ -434,26 +433,30 @@ def update_bubble_graph(data, month, slider_marks):
         zeroline=False,
     )
 
-    # add parent circles
+    # Add parent circles
     for idx, circle in enumerate(circles):
         x, y, r = circle
-        fig.add_shape(type="circle",
+        fig.add_shape(
+            type="circle",
             xref="x", yref="y",
-            x0=x-r, y0=y-r, x1=x+r, y1=y+r,
-            fillcolor=data['colors'][top-1-idx], # fill color if needed
-            line_color=data['colors'][top-1-idx],
-            line_width=2,
+            x0=x-r, y0=y-r,
+            x1=x+r, y1=y+r,
+            fillcolor=data['colors'][top-1-idx],
+            line_width=0,
         )
-        fig.add_annotation(x=x, y=y,
-                text=data['tracks'][top-1-idx], showarrow=False,
-                yshift=10)
-        
-    # for idx, circle in enumerate(circles):
-    #     x, y, r = circle
-    #     fig.add_annotation(x=x, y=y,
-    #             text=data['tracks'][len(data['tracks'])-idx], showarrow=False,
-    #             yshift=10)
-        
+
+        # TODO: Find a way to center the annotation in the circle
+        # --> Move it down by 8px
+        fig.add_annotation(
+            x=x, y=y,
+            text=data['tracks'][top-1-idx],
+            font=dict(
+                color="#000000"
+            ),
+            showarrow=False,
+            yshift=10
+        )
+
     # Set figure size
     fig.update_layout(width=800, height=800, plot_bgcolor="white")
 
