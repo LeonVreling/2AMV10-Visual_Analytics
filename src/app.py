@@ -441,7 +441,7 @@ def update_bubble_graph(data, month, slider_marks):
             xref="x", yref="y",
             x0=x-r, y0=y-r, x1=x+r, y1=y+r,
             fillcolor=data['colors'][top-1-idx], # fill color if needed
-            line_color="LightSeaGreen",
+            line_color=data['colors'][top-1-idx],
             line_width=2,
         )
         fig.add_annotation(x=x, y=y,
