@@ -71,30 +71,6 @@ top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "i
 
 top_tracks_features = sp.audio_features(tracks=[track["id"] for track in top_tracks])
 
-titles = [track["title"] for track in top_tracks]
-artists = [track["artist"] for track in top_tracks]
-tempos = [track["tempo"] for track in top_tracks_features]
-durations = [track["duration_ms"] / 1000 for track in top_tracks_features]
-
-df = pd.DataFrame({
-    "Title": titles,
-    "Artist": artists,
-    "Tempo": tempos,
-    "Duration": durations
-})
-
-fig = px.scatter(df, x="Tempo", y="Duration",
-                 custom_data=["Title", "Artist"],
-                 labels={"Tempo": "Tempo (bpm)", "Duration": "Duration (s)"},
-                 title="Top 10 songs of this month")
-
-fig.update_traces(
-    hovertemplate="<br>".join([
-        "Title: %{customdata[0]}",
-        "Artist: %{customdata[1]}"
-    ])
-)
-
 
 # RadViz for two songs
 index_first_song = 0
@@ -231,35 +207,6 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
-            dcc.Dropdown(
-                id="track-dropdown",
-                options=track_options,
-                value=track_options[0]["value"]
-            )
-        ], width=6),
-
-        dbc.Col([
-            html.Div(id="track-info")
-        ])
-    ]),
-
-    dbc.Row([
-        dbc.Col([
-            html.Ol([html.Li(children=[track["artist"], " - ", track["title"]]) for track in top_tracks])
-        ])
-    ]),
-
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='example-graph',
-                figure=fig
-            )
-        ])
-    ]),
-
-    dbc.Row([
-        dbc.Col([
             dcc.Graph(
                 id='radviz-example-graph',
                 figure=fig_radviz
@@ -315,19 +262,6 @@ def load_dataset(path):
             slider_marks_cleaned[key] = slider_marks[key]
 
     return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
-
-
-@app.callback(
-    Output("track-info", "children"),
-    [Input("track-dropdown", "value")]
-)
-def update_track_info(track_id):
-    track = sp.track(track_id)
-    return html.Div([
-        html.H2(track["name"]),
-        html.P(track["artists"][0]["name"])
-    ])
-
 
 @app.callback(
     Output("listening-duration-graph", "figure"),
