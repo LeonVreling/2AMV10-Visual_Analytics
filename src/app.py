@@ -8,6 +8,46 @@ import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
+from colorhash import ColorHash
+import circlify
+import json
+# import operator
+
+
+def get_top_songs(df, month, top):
+    df = df[df['month'] == month].copy()
+    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+    df = df.drop_duplicates().reset_index().drop(columns=['index'])
+    df['count'] = counts['spotify_track_uri']
+    df = df.sort_values(by=['count'], ascending=False)
+    top_tracks = [*df['master_metadata_track_name'][:top]]
+    counts = [*df['count'][:top]]
+    colors = []
+    for i in top_tracks:
+        colors.append(ColorHash(i).hex)
+    
+    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
+    
+    return data
+
+
+def get_top_artists(df, month, top):
+    df = df[df['month'] == month].copy()
+    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['master_metadata_album_artist_name'].value_counts(sort=False).reset_index()
+    df = df.drop_duplicates(subset='master_metadata_album_artist_name').reset_index().drop(columns=['index'])
+    df['count'] = counts['master_metadata_album_artist_name']
+    df = df.sort_values(by=['count'], ascending=False)
+    top_tracks = [*df['master_metadata_album_artist_name'][:top]]
+    counts = [*df['count'][:top]]
+    colors = []
+    for i in top_tracks:
+        colors.append(ColorHash(i).hex)
+    
+    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
+    
+    return data
 
 
 # Authenticate using the Spotify server
@@ -19,9 +59,11 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 
+
 # Last 20 saved tracks of a user
 tracks = sp.current_user_saved_tracks()
 track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]} for track in tracks["items"]]
+
 
 # Top 10 songs of user with graph for tempo and duration
 top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
@@ -223,10 +265,56 @@ app.layout = dbc.Container([
                 figure=fig_radviz
             )
         ])
-    ])
+    ]),
 
+    dbc.Row([
+        dbc.Col([
+            dcc.Slider(
+                step=1,
+                updatemode='drag',
+                id='slider-bubble'
+            ),
 
+            dcc.Graph(id="bubble-graph")
+        ])
+    ]),
+
+    dcc.Store(id='dataset'),
+    dcc.Store(id='slider-marks')
 ])
+
+
+@app.callback(
+    Output("dataset", "data"),
+    Output("slider-bubble", "min"),
+    Output("slider-bubble", "max"),
+    Output("slider-bubble", "marks"),
+    Output("slider-marks", "data"),
+    Input("datasets-dropdown", "value")
+)
+def load_dataset(path):
+
+    # Load the data set
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    unique_months = df["month"].unique()
+
+    # Compute the slider marks
+    slider_marks = {}
+    for index, month in enumerate(unique_months):
+        slider_marks[index] = month
+
+    # Clean the slider marks to only show one per half year
+    slider_marks_cleaned = {}
+    for key in [*slider_marks]:
+        if key != 0 and key != len(unique_months)-1:
+            if slider_marks[key].endswith("01") or slider_marks[key].endswith("07"):
+                slider_marks_cleaned[key] = slider_marks[key]
+        else:
+            slider_marks_cleaned[key] = slider_marks[key]
+
+    return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
 
 
 @app.callback(
@@ -244,15 +332,14 @@ def update_track_info(track_id):
 @app.callback(
     Output("listening-duration-graph", "figure"),
     Output("top-tracks", "children"),
-    Input("datasets-dropdown", "value"),
+    Input("dataset", "data"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
     Input("filter-value", "value")
 )
-def update_duration_listening_graph(path, timespan, filter_column, filter):
+def update_duration_listening_graph(data, timespan, filter_column, filter):
 
-    # TODO Change function to only load dataset on datasets-dropdown change
-    df = pd.read_csv(path)
+    df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
@@ -297,6 +384,83 @@ def update_duration_listening_graph(path, timespan, filter_column, filter):
         layout.append(song_tile)
 
     return fig, layout
+
+
+@app.callback(
+    Output("bubble-graph", "figure"),
+    Input("dataset", "data"),
+    Input("slider-bubble", "value"),
+    Input("slider-marks", "data")
+)
+def update_bubble_graph(data, month, slider_marks):
+
+    slider_marks = json.loads(slider_marks)
+    month = 0 if month is None else month
+
+    df = pd.read_json(data)
+    top = 9
+
+    data = get_top_artists(df, slider_marks[str(month)], top)
+
+    circles = circlify.circlify(
+        data['counts'], 
+        show_enclosure=False, 
+        target_enclosure=circlify.Circle(x=0, y=0, r=1)
+    )
+
+    child_circle_groups = []
+    for i in range(len(data['counts'])):
+        child_circle_groups.append(circlify.circlify(
+            data['counts'], 
+            show_enclosure=False, 
+            target_enclosure=circlify.Circle(x=circles[i].x, y=circles[i].y, r=circles[i].r)
+        ))
+
+    fig = go.Figure()
+
+    # Set axes properties
+    fig.update_xaxes(
+        range=[-1.05, 1.05], # making slightly wider axes than -1 to 1 so no edge of circles cut-off
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False
+    )
+
+    fig.update_yaxes(
+        range=[-1.05, 1.05],
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+    )
+
+    # Add parent circles
+    for idx, circle in enumerate(circles):
+        x, y, r = circle
+        fig.add_shape(
+            type="circle",
+            xref="x", yref="y",
+            x0=x-r, y0=y-r,
+            x1=x+r, y1=y+r,
+            fillcolor=data['colors'][top-1-idx],
+            line_width=0,
+        )
+
+        # TODO: Find a way to center the annotation in the circle
+        # --> Move it down by 8px
+        fig.add_annotation(
+            x=x, y=y,
+            text=data['tracks'][top-1-idx],
+            font=dict(
+                color="#000000"
+            ),
+            showarrow=False,
+            yshift=10
+        )
+
+    # Set figure size
+    fig.update_layout(width=800, height=800, plot_bgcolor="white")
+
+    return fig
 
 
 # Run the app

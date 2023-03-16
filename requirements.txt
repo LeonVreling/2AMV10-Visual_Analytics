@@ -2,4 +2,6 @@ pandas
 dash
 dash-bootstrap-components
 spotipy
-os
+colorhash
+circlify
+json
