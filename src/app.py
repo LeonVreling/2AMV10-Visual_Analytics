@@ -11,6 +11,7 @@ import os
 from colorhash import ColorHash
 import circlify
 import json
+from math import floor, ceil
 # import operator
 
 
@@ -263,9 +264,90 @@ def load_dataset(path):
 
     return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
 
+
+def get_top_songs_range(df, start_range=None, end_range=None, range_column=None, top=5):
+
+    if start_range is not None:
+        if range_column == "year" or range_column == "hour":
+            start = ceil(start_range)
+            end = floor(end_range)
+            df = df[df[range_column].between(start, end)]
+        if range_column == "month":
+            months = df["month"].unique().tolist()
+
+            start_index = months.index(start_range[:7])
+            end_index = months.index(end_range[:7])
+
+            months_to_filter = months[start_index : end_index+1]
+
+            df = df[df[range_column].isin(months_to_filter)]
+
+    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+    tracks = tracks.drop_duplicates().reset_index(drop=True)
+    tracks['count'] = counts['spotify_track_uri']
+    tracks.sort_values(by=['count'], ascending=False, inplace=True)
+    tracks.reset_index(drop=True, inplace=True)
+    return tracks.head(top)
+
+
+@app.callback(
+    Output("top-tracks", "children"),
+    Input("dataset", "data"),
+    Input("listening-duration-graph", "relayoutData"),
+    Input("timespan-dropdown", "value"),
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
+)
+def get_scale_graph(data, graph_events, timespan, filter_column, filter):
+
+    df = pd.read_json(data)
+    df.drop_duplicates(inplace=True)
+
+    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
+
+    # When the graph is first loaded or the scale is reset
+    if "xaxis.autorange" in graph_events or "autosize" in graph_events:
+        top_tracks = get_top_songs_range(df)
+
+        return convert_to_top_tracks_list(top_tracks)
+
+    # When the user has resized the graph
+    if "xaxis.range[0]" in graph_events:
+        app.logger.info(graph_events)
+        top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
+
+        return convert_to_top_tracks_list(top_tracks)
+
+
+def convert_to_top_tracks_list(data):
+    layout = []
+    for index, track in data.iterrows():
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        song_tile = dbc.Row([
+            dbc.Col([
+                html.H2("#{}".format(index+1))
+            ], width=2),
+
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=3),
+
+            dbc.Col([
+                html.H4(track["master_metadata_track_name"]),
+                html.Span(track["master_metadata_album_artist_name"])
+            ], width=7)
+        ])
+
+        layout.append(song_tile)
+    return layout
+
+
 @app.callback(
     Output("listening-duration-graph", "figure"),
-    Output("top-tracks", "children"),
     Input("dataset", "data"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
@@ -285,39 +367,9 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
     fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
-                .update_yaxes(title = 'Total hours', visible = True, showticklabels = True)
+                .update_yaxes(title = 'Total hours', visible = True, showticklabels = True, fixedrange = True)
 
-    # Gather the most listened tracks
-    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
-    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
-    tracks = tracks.drop_duplicates().reset_index(drop=True)
-    tracks['count'] = counts['spotify_track_uri']
-    tracks.sort_values(by=['count'], ascending=False, inplace=True)
-    tracks.reset_index(drop=True, inplace=True)
-    top_tracks = tracks.head(5)
-
-    # Convert the tracks to a nice layout
-    layout = []
-    for index, track in top_tracks.iterrows():
-        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
-        song_tile = dbc.Row([
-            dbc.Col([
-                html.H2("#{}".format(index+1))
-            ], width=2),
-
-            dbc.Col([
-                html.Img(src=album_cover)
-            ], width=3),
-
-            dbc.Col([
-                html.H4(track["master_metadata_track_name"]),
-                html.Span(track["master_metadata_album_artist_name"])
-            ], width=7)
-        ])
-
-        layout.append(song_tile)
-
-    return fig, layout
+    return fig
 
 
 @app.callback(
