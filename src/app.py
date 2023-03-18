@@ -61,11 +61,6 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 
 
-# Last 20 saved tracks of a user
-tracks = sp.current_user_saved_tracks()
-track_options = [{"label": track["track"]["name"], "value": track["track"]["id"]} for track in tracks["items"]]
-
-
 # Top 10 songs of user with graph for tempo and duration
 top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
 top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "id": track["id"]} for track in top_tracks["items"]]
@@ -135,21 +130,6 @@ app.layout = dbc.Container([
         dbc.Col([
             html.H1("Analyzing Spotfiy data", style={'textAlign': 'center'})
         ], width=12)
-    ]),
-
-    dbc.Row([
-        dbc.Col([
-            html.P("A simple web dashboard for analyzing Spotify data using various visual analytics and machine learning techniques."),
-            html.I(className="fa-solid fa-people-group"),
-            html.Span(" Marlou Gielen, Elian Klaassen and Leon Vreling"),
-            html.Br(),
-            html.I(className="fa-solid fa-graduation-cap"),
-            html.Span(" Eindhoven University of Technology, 2AMV10 Visual Analytics")
-        ], width=6),
-
-        dbc.Col([
-            html.Img(src=app.get_asset_url("spotify_logo.png"), style={'width': '100%'})
-        ], width=6)
     ]),
 
     html.Hr(),
@@ -368,6 +348,12 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
                 .update_yaxes(title = 'Total hours', visible = True, showticklabels = True, fixedrange = True)
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
 
     return fig
 
