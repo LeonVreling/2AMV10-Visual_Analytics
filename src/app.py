@@ -1,6 +1,7 @@
 # app.py
 
 from dash import Dash, dcc, html, Input, Output
+from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
@@ -126,13 +127,6 @@ timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "
 
 
 app.layout = dbc.Container([
-    dbc.Row([
-        dbc.Col([
-            html.H1("Analyzing Spotfiy data", style={'textAlign': 'center'})
-        ], width=12)
-    ]),
-
-    html.Hr(),
 
     dbc.Row([
         dbc.Col([
@@ -174,17 +168,16 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
-            dcc.Graph(
-                id="listening-duration-graph"
-            )
-        ], width=9),
+            html.Div(id="top-tracks")
+        ], width=3),
 
         dbc.Col([
-            html.Div(id="top-tracks")
-        ], width=3)
+            dcc.Graph(
+                id="listening-duration-graph",
+                config = {"modeBarButtonsToRemove": ["lasso2d"]}
+            )
+        ], width=9)
     ]),
-
-    html.Hr(),
 
     dbc.Row([
         dbc.Col([
@@ -209,7 +202,7 @@ app.layout = dbc.Container([
 
     dcc.Store(id='dataset'),
     dcc.Store(id='slider-marks')
-])
+], style={"max-width": "100%", "paddingTop": "12px"})
 
 
 @app.callback(
@@ -280,6 +273,9 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None,
     Input("filter-value", "value")
 )
 def get_scale_graph(data, graph_events, timespan, filter_column, filter):
+
+    if graph_events == {}:
+        raise PreventUpdate
 
     df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
@@ -353,7 +349,6 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     fig.layout.margin.t = 40
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
-
 
     return fig
 
