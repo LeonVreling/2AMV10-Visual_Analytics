@@ -125,15 +125,14 @@ rfc.fit(X_train, y_train)
 
 #UMAP
 reducer = umap.UMAP()
+df = df.drop_duplicates()
 data = df[['danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']]
-data = data.drop_duplicates()
 scaled_data = StandardScaler().fit_transform(data)
 embedding = reducer.fit_transform(scaled_data)
-df_emb = pd.DataFrame(embedding)
 y_pred = rfc.predict_proba(data)
-fig_rf = px.scatter(
-    df_emb, x=0, y=1,
-    color=y_pred[:,1])
+result = pd.concat([df.reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
+fig_rf = px.scatter(result, x='x', y='y', color='like_prob', hover_name='master_metadata_track_name')
 
 
 # Authenticate using the Spotify server
