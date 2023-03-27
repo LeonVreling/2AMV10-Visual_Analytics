@@ -130,43 +130,36 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
+            # TODO: Add labels to the different options
             dcc.Dropdown(
                 id="datasets-dropdown",
                 options=data_files,
                 value=data_files[0]["value"]
-            )
-        ], width=4),
+            ),
 
-        dbc.Col([
             dcc.Dropdown(
                 id="timespan-dropdown",
                 options=timespan_options,
                 value=timespan_options[0]["value"]
-            )
-        ], width=4),
+            ),
 
-        dbc.Col([
             dbc.RadioItems(
+                # TODO: Make this radio button nicer, for instance with a slider
                 id="filter-column",
                 options=[
                     {"label": "Artist", "value": "master_metadata_album_artist_name"},
                     {"label": "Song Title", "value": "master_metadata_track_name"}
                 ],
                 value="master_metadata_album_artist_name"
-            )
-        ], width=1),
+            ),
 
-        dbc.Col([
             dbc.Input(
                 id="filter-value",
                 type="text",
                 placeholder="Filter"
             )
-        ], width=3)
+        ], width=2),
 
-    ]),
-
-    dbc.Row([
         dbc.Col([
             html.Div(id="top-tracks")
         ], width=3),
@@ -176,7 +169,8 @@ app.layout = dbc.Container([
                 id="listening-duration-graph",
                 config = {"modeBarButtonsToRemove": ["lasso2d"]}
             )
-        ], width=9)
+        ], width=7)
+
     ]),
 
     dbc.Row([
@@ -305,17 +299,17 @@ def convert_to_top_tracks_list(data):
         album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
-                html.H2("#{}".format(index+1))
-            ], width=2),
+                html.H3("#{}".format(index+1))
+            ], width=1, class_name="p-0"),
 
             dbc.Col([
                 html.Img(src=album_cover)
-            ], width=3),
+            ], width=2),
 
             dbc.Col([
-                html.H4(track["master_metadata_track_name"]),
+                html.H5(track["master_metadata_track_name"]),
                 html.Span(track["master_metadata_album_artist_name"])
-            ], width=7)
+            ], width=9, style={"paddingLeft": "24px"})
         ])
 
         layout.append(song_tile)
@@ -349,6 +343,7 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     fig.layout.margin.t = 40
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
+    fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig
 
