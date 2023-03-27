@@ -109,11 +109,20 @@ def do_random_forest(datapath):
     data = data.drop_duplicates()
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
-    df_emb = pd.DataFrame(embedding)
     y_pred = rfc.predict_proba(data)
-    fig = px.scatter(
-        df_emb, x=0, y=1,
-        color=y_pred[:,1])
+    result = pd.concat([df_features.drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+    result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
+    fig = px.scatter(result, 
+            x='x', 
+            y='y', 
+            color='like_prob', 
+            hover_data={'x':False, 
+                        'y':False,
+                        'like_prob':True,
+                        # 'master_metadata_album_artist_name':True, ? TODO @Elian: Fix
+                        'master_metadata_track_name':True
+                        })
+
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
 
