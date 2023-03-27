@@ -13,6 +13,14 @@ from colorhash import ColorHash
 import circlify
 import json
 from math import floor, ceil
+import umap
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from sklearn.preprocessing import StandardScaler
+from matplotlib.colors import BoundaryNorm
+import matplotlib.pyplot as plt
 # import operator
 
 
@@ -50,6 +58,82 @@ def get_top_artists(df, month, top):
     data = {"tracks":top_tracks, "counts":counts, "colors":colors}
     
     return data
+
+
+# Random forest stuff
+df = pd.read_csv('data/data_folder/data_elian_features.csv')
+# Create df with just musical features
+#df_features = df.drop(['ts', 'username', 'platform', 'conn_country', 'year', 'month', 'hour', 'ip_addr_decrypted', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'reason_start', 'reason_end', 'shuffle', 'skipped', 'time', 'offline', 'offline_timestamp', 'type', 'id', 'track_href', 'analysis_url', 'time_signature'], axis=1)
+df_features = df.filter(['master_metadata_track_name', 'spotify_track_uri', 'danceability',
+       'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness',
+       'instrumentalness', 'liveness', 'valence', 'tempo'])
+
+# Create df with frequency tracks
+tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
+tracks = tracks.drop_duplicates().reset_index(drop=True)
+tracks['count'] = counts['spotify_track_uri']
+tracks.sort_values(by=['count'], ascending=False, inplace=True)
+tracks.reset_index(drop=True, inplace=True)
+#top_tracks = tracks.head(5)
+
+# percentage of average/median to define if song = 'liked'
+percentage = 2
+#ave_freq = tracks['count'].average() # average freq
+median_freq = tracks['count'].median() # median freq
+threshold_freq = percentage * median_freq # threshold freq based on average/median
+# print(threshold_freq)
+num_tracks = tracks.shape[1] #total number of songs
+tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
+
+# print(tracks['liked'].value_counts())
+# for i in range(num_tracks):
+#     print('this is the ', i, 'th iteration')
+#     if tracks['count'][i] > ave_freq:
+#         tracks['liked'][i] = True
+#     else:
+#         tracks['liked'][i] = False
+
+df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name'])
+# print(df_predict.columns)
+df_predict = df_predict.drop(['master_metadata_album_artist_name','master_metadata_album_album_name', 'count'], axis=1)
+# print(df_predict.columns)
+#tracks = tracks.drop(['count'], axis=1)
+#print(df_predict.head())
+
+# df predict should be the dataset with only numerical values 
+# upon which we can perform a random forest
+df = df_predict
+
+# Define the target variable and the features
+target = 'liked'                #could be genre?
+features = list(df.columns)
+features.remove(target)
+
+# Split the dataset into train and test set
+X_train_uri, X_test_uri, y_train, y_test = train_test_split(df[features], df[target], test_size=0.2, random_state=0)
+X_train = X_train_uri.drop(['spotify_track_uri', 'master_metadata_track_name'], axis=1)
+X_test = X_test_uri.drop(['spotify_track_uri', 'master_metadata_track_name'], axis=1)
+features.remove('spotify_track_uri')
+features.remove('master_metadata_track_name')
+
+# Instantiate a random forest classifier with 100 trees and a maximum depth of 5
+rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
+
+# Train the random forest model on train set
+rfc.fit(X_train, y_train)
+
+#UMAP
+reducer = umap.UMAP()
+data = df[['danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']]
+data = data.drop_duplicates()
+scaled_data = StandardScaler().fit_transform(data)
+embedding = reducer.fit_transform(scaled_data)
+df_emb = pd.DataFrame(embedding)
+y_pred = rfc.predict_proba(data)
+fig_rf = px.scatter(
+    df_emb, x=0, y=1,
+    color=y_pred[:,1])
 
 
 # Authenticate using the Spotify server
@@ -181,6 +265,16 @@ app.layout = dbc.Container([
             )
         ])
     ]),
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
+                id='random_forest',
+                figure=fig_rf
+            )
+        ])
+    ]),
+
 
     dbc.Row([
         dbc.Col([
