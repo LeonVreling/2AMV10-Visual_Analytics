@@ -4,4 +4,3 @@ dash-bootstrap-components
 spotipy
 colorhash
 circlify
-json
