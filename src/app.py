@@ -56,20 +56,16 @@ def get_top_artists(df, month, top):
     
     return data
 
-def do_random_forest(datapath):
-    df = pd.read_csv(datapath)
-    # Create df with just musical features
-    df_features = df.filter(['master_metadata_track_name', 'spotify_track_uri', 'danceability',
-        'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness',
-        'instrumentalness', 'liveness', 'valence', 'tempo'])
+def do_random_forest(tracks, app):
 
-    # Create df with frequency tracks
-    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
-    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
-    tracks = tracks.drop_duplicates().reset_index(drop=True)
-    tracks['count'] = counts['spotify_track_uri']
-    tracks.sort_values(by=['count'], ascending=False, inplace=True)
-    tracks.reset_index(drop=True, inplace=True)
+    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
+
+    df_features = pd.read_csv('data/data_elian_features.csv')
+    df_features = df_features.filter(['spotify_track_uri'] + FEATURE_LIST)
+    df_features.drop_duplicates(inplace=True)
+
+    app.logger.info(df_features.head())
+    # Create df with just musical features
 
     # percentage of average/median to define if song = 'liked'
     percentage = 2
@@ -81,7 +77,7 @@ def do_random_forest(datapath):
     tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
 
 
-    df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name'])
+    df_predict = pd.merge(tracks, df_features, on=['spotify_track_uri'])
     df_predict = df_predict.drop(['master_metadata_album_artist_name','master_metadata_album_album_name', 'count'], axis=1)
 
 
@@ -105,7 +101,7 @@ def do_random_forest(datapath):
 
     #UMAP
     reducer = umap.UMAP()
-    data = df_predict[['danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']]
+    data = df_predict[FEATURE_LIST]
     data = data.drop_duplicates()
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
@@ -120,7 +116,7 @@ def do_random_forest(datapath):
                         'y':False,
                         'like_prob':True,
                         # 'master_metadata_album_artist_name':True, ? TODO @Elian: Fix
-                        'master_metadata_track_name':True
+                        # 'master_metadata_track_name':True
                         })
 
     fig.update_xaxes(visible=False)
@@ -134,9 +130,6 @@ def do_random_forest(datapath):
     fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig
-
-
-fig_rf = do_random_forest('data/data_elian/data_elian_features.csv')
 
 
 # Authenticate using the Spotify server
@@ -204,7 +197,7 @@ fig_radviz.update_layout(
 ### Visualisation of personal listening over time
 # Getting the datasets
 data_files = []
-for data_folder in os.listdir("data"):
+for data_folder in [folder for folder in os.listdir("data") if "." not in folder]:
     for file in os.listdir("data/{}".format(data_folder)):
         if file.endswith(".csv"):
             data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
@@ -263,8 +256,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id='random_forest',
-                figure=fig_rf
+                id='random-forest',
             )
         ], width=8)
     ]),
@@ -328,7 +320,7 @@ def load_dataset(path):
     return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
 
 
-def get_top_songs_range(df, start_range=None, end_range=None, range_column=None, top=5):
+def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
 
     if start_range is not None:
         if range_column == "year" or range_column == "hour":
@@ -351,11 +343,12 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None,
     tracks['count'] = counts['spotify_track_uri']
     tracks.sort_values(by=['count'], ascending=False, inplace=True)
     tracks.reset_index(drop=True, inplace=True)
-    return tracks.head(top)
+    return tracks
 
 
 @app.callback(
     Output("top-tracks", "children"),
+    Output("random-forest", "figure"),
     Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
@@ -379,14 +372,20 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
     if "xaxis.autorange" in graph_events or "autosize" in graph_events:
         top_tracks = get_top_songs_range(df)
 
-        return convert_to_top_tracks_list(top_tracks)
+        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
+        fig_rf = do_random_forest(top_tracks, app)
+
+        return top_songs_layout, fig_rf
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
         app.logger.info(graph_events)
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
-        return convert_to_top_tracks_list(top_tracks)
+        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
+        fig_rf = do_random_forest(top_tracks, app)
+
+        return top_songs_layout, fig_rf
 
 
 def convert_to_top_tracks_list(data):
