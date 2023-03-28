@@ -212,32 +212,6 @@ categories = ["acousticness", "danceability", "energy", "instrumentalness", "liv
 
 # new_loudness = (original_loudness + 60) * (1 / 60) + 0 = 1 + original_loudness / 60
 
-fig_radviz = go.Figure()
-
-fig_radviz.add_trace(go.Scatterpolar(
-      r=[top_tracks_features[index_first_song][category] if category != "loudness" else 1+top_tracks_features[index_first_song]["loudness"]/60 for category in categories],
-      theta=categories,
-      fill='toself',
-      name= top_tracks[index_first_song]["title"] + " - " + top_tracks[index_first_song]["artist"]
-))
-fig_radviz.add_trace(go.Scatterpolar(
-      r=[top_tracks_features[index_second_song][category] if category != "loudness" else 1+top_tracks_features[index_second_song]["loudness"]/60 for category in categories],
-      theta=categories,
-      fill='toself',
-      name= top_tracks[index_second_song]["title"] + " - " + top_tracks[index_second_song]["artist"]
-))
-
-fig_radviz.update_layout(
-  polar=dict(
-    radialaxis=dict(
-      visible=True,
-      range=[0, 1]
-    )),
-  showlegend=True,
-  title="Similarness of two songs"
-)
-
-
 ### Visualisation of personal listening over time
 # Getting the datasets
 data_files = []
@@ -314,16 +288,6 @@ app.layout = dbc.Container([
         ], width=8)
     ]),
 
-
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='radviz-example-graph',
-                figure=fig_radviz
-            )
-        ])
-    ]),
-
     dbc.Row([
         dbc.Col([
             dcc.Slider(
@@ -331,8 +295,6 @@ app.layout = dbc.Container([
                 updatemode='drag',
                 id='slider-bubble'
             ),
-
-            dcc.Graph(id="bubble-graph")
         ])
     ]),
 
@@ -540,84 +502,6 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig
-
-
-@app.callback(
-    Output("bubble-graph", "figure"),
-    Input("dataset", "data"),
-    Input("slider-bubble", "value"),
-    Input("slider-marks", "data")
-)
-def update_bubble_graph(data, month, slider_marks):
-
-    slider_marks = json.loads(slider_marks)
-    month = 0 if month is None else month
-
-    df = pd.read_json(data)
-    top = 9
-
-    data = get_top_artists(df, slider_marks[str(month)], top)
-
-    circles = circlify.circlify(
-        data['counts'], 
-        show_enclosure=False, 
-        target_enclosure=circlify.Circle(x=0, y=0, r=1)
-    )
-
-    child_circle_groups = []
-    for i in range(len(data['counts'])):
-        child_circle_groups.append(circlify.circlify(
-            data['counts'], 
-            show_enclosure=False, 
-            target_enclosure=circlify.Circle(x=circles[i].x, y=circles[i].y, r=circles[i].r)
-        ))
-
-    fig = go.Figure()
-
-    # Set axes properties
-    fig.update_xaxes(
-        range=[-1.05, 1.05], # making slightly wider axes than -1 to 1 so no edge of circles cut-off
-        showticklabels=False,
-        showgrid=False,
-        zeroline=False
-    )
-
-    fig.update_yaxes(
-        range=[-1.05, 1.05],
-        showticklabels=False,
-        showgrid=False,
-        zeroline=False,
-    )
-
-    # Add parent circles
-    for idx, circle in enumerate(circles):
-        x, y, r = circle
-        fig.add_shape(
-            type="circle",
-            xref="x", yref="y",
-            x0=x-r, y0=y-r,
-            x1=x+r, y1=y+r,
-            fillcolor=data['colors'][top-1-idx],
-            line_width=0,
-        )
-
-        # TODO: Find a way to center the annotation in the circle
-        # --> Move it down by 8px
-        fig.add_annotation(
-            x=x, y=y,
-            text=data['tracks'][top-1-idx],
-            font=dict(
-                color="#000000"
-            ),
-            showarrow=False,
-            yshift=10
-        )
-
-    # Set figure size
-    fig.update_layout(width=800, height=800, plot_bgcolor="white")
-
-    return fig
-
 
 # Run the app
 if __name__ == '__main__':
