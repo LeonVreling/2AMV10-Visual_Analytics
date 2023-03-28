@@ -61,7 +61,7 @@ def do_random_forest(tracks, app):
     FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
 
     # TODO: Update the file "data_elian_features" to "data_features" which has one entry per track_uri for all users combined
-    df_features = pd.read_csv('data/data_elian_features.csv')
+    df_features = pd.read_csv('data/data_folder/data_elian_features.csv')
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri'] + FEATURE_LIST)
     df_features.drop_duplicates(inplace=True)
 
@@ -78,13 +78,14 @@ def do_random_forest(tracks, app):
     tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
 
 
-    df_predict = pd.merge(tracks, df_features, on=['spotify_track_uri'])
+    df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name'])
+    df_predict = df_predict.drop(['count'], axis=1)
 
     # Define the target column of the model
     target = 'liked'
  
     # Split the dataset into train and test set
-    X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], test_size=0.2, random_state=0)
+    X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
 
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
@@ -101,7 +102,7 @@ def do_random_forest(tracks, app):
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
     y_pred = rfc.predict_proba(data)
-    result = pd.concat([df_features.drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+    result = pd.concat([df_predict.filter(['master_metadata_track_name', 'master_metadata_album_artist_name'] + FEATURE_LIST).drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
     fig = px.scatter(result, 
