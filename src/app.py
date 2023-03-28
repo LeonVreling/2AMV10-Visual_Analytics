@@ -62,7 +62,7 @@ def do_random_forest(tracks, app):
 
     # TODO: Update the file "data_elian_features" to "data_features" which has one entry per track_uri for all users combined
     df_features = pd.read_csv('data/data_elian_features.csv')
-    df_features = df_features.filter(['spotify_track_uri'] + FEATURE_LIST)
+    df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri'] + FEATURE_LIST)
     df_features.drop_duplicates(inplace=True)
 
     app.logger.info(df_features.head())
@@ -111,9 +111,13 @@ def do_random_forest(tracks, app):
             hover_data={'x':False, 
                         'y':False,
                         'like_prob':True,
-                        # 'master_metadata_album_artist_name':True, # TODO @Elian: Fix
-                        # 'master_metadata_track_name':True
+                        'master_metadata_album_artist_name':True,
+                        'master_metadata_track_name':True
                         })
+    
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
 
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
