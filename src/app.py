@@ -19,6 +19,8 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
+import numpy as np
+from lime.lime_tabular import LimeTabularExplainer
 
 
 def get_top_songs(df, month, top):
@@ -65,7 +67,7 @@ def do_random_forest(tracks, app):
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri'] + FEATURE_LIST)
     df_features.drop_duplicates(inplace=True)
 
-    app.logger.info(df_features.head())
+    # app.logger.info(df_features.head())
     # Create df with just musical features
 
     # percentage of average/median to define if song = 'liked'
@@ -85,7 +87,11 @@ def do_random_forest(tracks, app):
     target = 'liked'
  
     # Split the dataset into train and test set
-    X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
+    if len(df_predict) > 1:
+        X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
+    else: 
+        X_train = np.array(df_predict[FEATURE_LIST].iloc[0]).reshape(1, -1) 
+        y_train = np.array(df_predict[target].iloc[0]).reshape(1, -1) 
 
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
@@ -96,7 +102,7 @@ def do_random_forest(tracks, app):
     # TODO: Compute goodness of fit of the model
 
     #UMAP
-    reducer = umap.UMAP()
+    reducer = umap.UMAP(random_state=0)
     data = df_predict[FEATURE_LIST]
     data = data.drop_duplicates()
     scaled_data = StandardScaler().fit_transform(data)
@@ -130,6 +136,54 @@ def do_random_forest(tracks, app):
 
     fig.layout.height = 350 # TODO: Tune height of the graph
 
+    return fig, result, rfc
+
+def lime_plot(x, y, result, rfc):
+    # list with all song features
+    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
+
+    # define lime explainer
+    lime_explainer = LimeTabularExplainer(
+        result[FEATURE_LIST],
+        mode="classification",
+        feature_names=FEATURE_LIST,
+        kernel_width=np.sqrt(len(result)),
+        discretize_continuous=False,
+        feature_selection="forward_selection",
+    )
+
+    # selected sample from random forest plot
+    sample = result.loc[(result['x'] == x) & (result['y'] == y)]
+
+    # Error catching
+    if len(sample) == 0:
+        return empty_lime()
+    
+    # explain the sample
+    explanation = lime_explainer.explain_instance(
+        sample[FEATURE_LIST].iloc[0],
+        rfc.predict_proba,
+        num_features=10,
+        num_samples=5000,
+        distance_metric="euclidean",
+    )
+    
+    # create a barchart of the LIME features
+    df = pd.DataFrame(np.array(explanation.as_list()), columns=['Features', 'Values'])
+    df['Values'] = df['Values'].apply(lambda x: float(x))
+    fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
+    return fig
+
+# default empty lime plot
+def empty_lime():
+    # default axis values
+    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
+    values = [i/2 if i % 2 == 0 else -i/3 for i in range(0, len(FEATURE_LIST))]
+
+    # default plot
+    df = pd.DataFrame(values, FEATURE_LIST).reset_index().rename(columns={0: "Values", "index": "Features"})
+    fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
+    fig.update_layout(title="Activate LIME by selecting a scatter in the plot")
     return fig
 
 
@@ -265,6 +319,16 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
+                id='lime-graph',
+                figure = empty_lime(),
+            )
+        ], width=8)
+    ]),
+
+
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
                 id='radviz-example-graph',
                 figure=fig_radviz
             )
@@ -287,6 +351,51 @@ app.layout = dbc.Container([
     dcc.Store(id='slider-marks')
 ], style={"max-width": "100%", "paddingTop": "12px"})
 
+@app.callback(
+    Output('lime-graph', "figure"),
+    Input("dataset", "data"),
+    Input("random-forest", "clickData"),    
+    Input("listening-duration-graph", "relayoutData"),
+    Input("timespan-dropdown", "value"),    
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
+)
+def click(data, clickData, graph_events, timespan, filter_column, filter):
+    if not clickData:
+        raise PreventUpdate
+
+    df = pd.read_json(data)
+    df.drop_duplicates(inplace=True)
+
+    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
+
+    # When the graph is first loaded or the scale is reset
+    if "xaxis.autorange" in graph_events or "autosize" in graph_events:
+        top_tracks = get_top_songs_range(df)
+        _, result, rfc = do_random_forest(top_tracks, app)
+        x = clickData['points'][0]['x']
+        y = clickData['points'][0]['y']
+        track_name = clickData['points'][0]['customdata'][2]
+        artist = clickData['points'][0]['customdata'][1]
+        fig = lime_plot(x, y, result, rfc)
+        fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
+
+    # When the user has resized the graph
+    if "xaxis.range[0]" in graph_events:
+        app.logger.info(graph_events)
+        top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
+        _, result, rfc = do_random_forest(top_tracks, app)
+        x = clickData['points'][0]['x']
+        y = clickData['points'][0]['y']
+        track_name = clickData['points'][0]['customdata'][2]
+        artist = clickData['points'][0]['customdata'][1]
+        fig = lime_plot(x, y, result, rfc)
+        fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
+
+    return fig
 
 @app.callback(
     Output("dataset", "data"),
@@ -374,7 +483,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf = do_random_forest(top_tracks, app)
+        fig_rf, _, _ = do_random_forest(top_tracks, app)
 
         return top_songs_layout, fig_rf
 
@@ -384,7 +493,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf = do_random_forest(top_tracks, app)
+        fig_rf, _, _ = do_random_forest(top_tracks, app)
 
         return top_songs_layout, fig_rf
 
