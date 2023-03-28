@@ -19,9 +19,6 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
-from matplotlib.colors import BoundaryNorm
-import matplotlib.pyplot as plt
-# import operator
 
 
 def get_top_songs(df, month, top):
@@ -59,80 +56,76 @@ def get_top_artists(df, month, top):
     
     return data
 
+def do_random_forest(tracks, app):
 
-# Random forest stuff
-df = pd.read_csv('data/data_folder/data_elian_features.csv')
-# Create df with just musical features
-#df_features = df.drop(['ts', 'username', 'platform', 'conn_country', 'year', 'month', 'hour', 'ip_addr_decrypted', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'reason_start', 'reason_end', 'shuffle', 'skipped', 'time', 'offline', 'offline_timestamp', 'type', 'id', 'track_href', 'analysis_url', 'time_signature'], axis=1)
-df_features = df.filter(['master_metadata_track_name', 'spotify_track_uri', 'danceability',
-       'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness',
-       'instrumentalness', 'liveness', 'valence', 'tempo'])
+    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
 
-# Create df with frequency tracks
-tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
-counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
-tracks = tracks.drop_duplicates().reset_index(drop=True)
-tracks['count'] = counts['spotify_track_uri']
-tracks.sort_values(by=['count'], ascending=False, inplace=True)
-tracks.reset_index(drop=True, inplace=True)
-#top_tracks = tracks.head(5)
+    # TODO: Update the file "data_elian_features" to "data_features" which has one entry per track_uri for all users combined
+    df_features = pd.read_csv('data/data_elian_features.csv')
+    df_features = df_features.filter(['spotify_track_uri'] + FEATURE_LIST)
+    df_features.drop_duplicates(inplace=True)
 
-# percentage of average/median to define if song = 'liked'
-percentage = 2
-#ave_freq = tracks['count'].average() # average freq
-median_freq = tracks['count'].median() # median freq
-threshold_freq = percentage * median_freq # threshold freq based on average/median
-# print(threshold_freq)
-num_tracks = tracks.shape[1] #total number of songs
-tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
+    app.logger.info(df_features.head())
+    # Create df with just musical features
 
-# print(tracks['liked'].value_counts())
-# for i in range(num_tracks):
-#     print('this is the ', i, 'th iteration')
-#     if tracks['count'][i] > ave_freq:
-#         tracks['liked'][i] = True
-#     else:
-#         tracks['liked'][i] = False
+    # percentage of average/median to define if song = 'liked'
+    percentage = 2
+    #ave_freq = tracks['count'].average() # average freq
+    median_freq = tracks['count'].median() # median freq
+    threshold_freq = percentage * median_freq # threshold freq based on average/median
+    # print(threshold_freq)
+    num_tracks = tracks.shape[1] #total number of songs
+    tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
 
-df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name'])
-# print(df_predict.columns)
-df_predict = df_predict.drop(['master_metadata_album_artist_name','master_metadata_album_album_name', 'count'], axis=1)
-# print(df_predict.columns)
-#tracks = tracks.drop(['count'], axis=1)
-#print(df_predict.head())
 
-# df predict should be the dataset with only numerical values 
-# upon which we can perform a random forest
-df = df_predict
+    df_predict = pd.merge(tracks, df_features, on=['spotify_track_uri'])
 
-# Define the target variable and the features
-target = 'liked'                #could be genre?
-features = list(df.columns)
-features.remove(target)
+    # Define the target column of the model
+    target = 'liked'
+ 
+    # Split the dataset into train and test set
+    X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], test_size=0.2, random_state=0)
 
-# Split the dataset into train and test set
-X_train_uri, X_test_uri, y_train, y_test = train_test_split(df[features], df[target], test_size=0.2, random_state=0)
-X_train = X_train_uri.drop(['spotify_track_uri', 'master_metadata_track_name'], axis=1)
-X_test = X_test_uri.drop(['spotify_track_uri', 'master_metadata_track_name'], axis=1)
-features.remove('spotify_track_uri')
-features.remove('master_metadata_track_name')
+    # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
+    rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
 
-# Instantiate a random forest classifier with 100 trees and a maximum depth of 5
-rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
+    # Train the random forest model on train set
+    rfc.fit(X_train, y_train)
 
-# Train the random forest model on train set
-rfc.fit(X_train, y_train)
+    # TODO: Compute goodness of fit of the model
 
-#UMAP
-reducer = umap.UMAP()
-df = df.drop_duplicates()
-data = df[['danceability', 'energy', 'key', 'loudness', 'mode', 'speechiness', 'acousticness', 'instrumentalness', 'liveness', 'valence', 'tempo']]
-scaled_data = StandardScaler().fit_transform(data)
-embedding = reducer.fit_transform(scaled_data)
-y_pred = rfc.predict_proba(data)
-result = pd.concat([df.reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
-result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
-fig_rf = px.scatter(result, x='x', y='y', color='like_prob', hover_name='master_metadata_track_name')
+    #UMAP
+    reducer = umap.UMAP()
+    data = df_predict[FEATURE_LIST]
+    data = data.drop_duplicates()
+    scaled_data = StandardScaler().fit_transform(data)
+    embedding = reducer.fit_transform(scaled_data)
+    y_pred = rfc.predict_proba(data)
+    result = pd.concat([df_features.drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+    result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
+    result = result.round({'like_prob': 4})
+    fig = px.scatter(result, 
+            x='x', 
+            y='y', 
+            color='like_prob', 
+            hover_data={'x':False, 
+                        'y':False,
+                        'like_prob':True,
+                        # 'master_metadata_album_artist_name':True, # TODO @Elian: Fix
+                        # 'master_metadata_track_name':True
+                        })
+
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
+    fig.layout.height = 350 # TODO: Tune height of the graph
+
+    return fig
 
 
 # Authenticate using the Spotify server
@@ -200,7 +193,7 @@ fig_radviz.update_layout(
 ### Visualisation of personal listening over time
 # Getting the datasets
 data_files = []
-for data_folder in os.listdir("data"):
+for data_folder in [folder for folder in os.listdir("data") if "." not in folder]:
     for file in os.listdir("data/{}".format(data_folder)):
         if file.endswith(".csv"):
             data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
@@ -259,21 +252,19 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id='radviz-example-graph',
-                figure=fig_radviz
+                id='random-forest',
             )
-        ])
+        ], width=8)
     ]),
 
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id='random_forest',
-                figure=fig_rf
+                id='radviz-example-graph',
+                figure=fig_radviz
             )
         ])
     ]),
-
 
     dbc.Row([
         dbc.Col([
@@ -325,7 +316,7 @@ def load_dataset(path):
     return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
 
 
-def get_top_songs_range(df, start_range=None, end_range=None, range_column=None, top=5):
+def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
 
     if start_range is not None:
         if range_column == "year" or range_column == "hour":
@@ -348,11 +339,12 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None,
     tracks['count'] = counts['spotify_track_uri']
     tracks.sort_values(by=['count'], ascending=False, inplace=True)
     tracks.reset_index(drop=True, inplace=True)
-    return tracks.head(top)
+    return tracks
 
 
 @app.callback(
     Output("top-tracks", "children"),
+    Output("random-forest", "figure"),
     Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
@@ -376,14 +368,20 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
     if "xaxis.autorange" in graph_events or "autosize" in graph_events:
         top_tracks = get_top_songs_range(df)
 
-        return convert_to_top_tracks_list(top_tracks)
+        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
+        fig_rf = do_random_forest(top_tracks, app)
+
+        return top_songs_layout, fig_rf
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
         app.logger.info(graph_events)
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
-        return convert_to_top_tracks_list(top_tracks)
+        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
+        fig_rf = do_random_forest(top_tracks, app)
+
+        return top_songs_layout, fig_rf
 
 
 def convert_to_top_tracks_list(data):

@@ -5,3 +5,4 @@ spotipy
 colorhash
 circlify
 umap-learn==0.3.10
+sklearn
