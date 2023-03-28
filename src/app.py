@@ -59,33 +59,21 @@ def get_top_artists(df, month, top):
     return data
 
 def do_random_forest(tracks, app):
-
     FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-
-    # TODO: Update the file "data_elian_features" to "data_features" which has one entry per track_uri for all users combined
     df_features = pd.read_csv('data/data_folder/data_elian_features.csv')
-    df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri'] + FEATURE_LIST)
-    df_features.drop_duplicates(inplace=True)
-
-    # app.logger.info(df_features.head())
-    # Create df with just musical features
+    df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
 
     # percentage of average/median to define if song = 'liked'
     percentage = 2
-    #ave_freq = tracks['count'].average() # average freq
     median_freq = tracks['count'].median() # median freq
     threshold_freq = percentage * median_freq # threshold freq based on average/median
-    # print(threshold_freq)
-    num_tracks = tracks.shape[1] #total number of songs
     tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
-
-
     df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name'])
     df_predict = df_predict.drop(['count'], axis=1)
 
     # Define the target column of the model
-    target = 'liked'
- 
+    target = 'liked'                #could be genre?
+    
     # Split the dataset into train and test set
     if len(df_predict) > 1:
         X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
@@ -95,15 +83,13 @@ def do_random_forest(tracks, app):
         fig = px.scatter(df,
             x='x', 
             y='y')
+        fig.update_layout(title="There are too few samples for a random forest prediction")
         return fig, 0, 0
 
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
-
     # Train the random forest model on train set
     rfc.fit(X_train, y_train)
-
-    # TODO: Compute goodness of fit of the model
 
     #UMAP
     reducer = umap.UMAP(random_state=0)
@@ -112,7 +98,7 @@ def do_random_forest(tracks, app):
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
     y_pred = rfc.predict_proba(data)
-    result = pd.concat([df_predict.filter(['master_metadata_track_name', 'master_metadata_album_artist_name'] + FEATURE_LIST).drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+    result = pd.concat([df_features.drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
     fig = px.scatter(result, 
@@ -125,7 +111,6 @@ def do_random_forest(tracks, app):
                         'master_metadata_album_artist_name':True,
                         'master_metadata_track_name':True
                         })
-    
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
@@ -451,7 +436,7 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
             df = df[df[range_column].isin(months_to_filter)]
 
-    tracks = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
+    tracks = df[['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name']].copy()
     counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
     tracks = tracks.drop_duplicates().reset_index(drop=True)
     tracks['count'] = counts['spotify_track_uri']
