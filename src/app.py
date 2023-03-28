@@ -89,9 +89,13 @@ def do_random_forest(tracks, app):
     # Split the dataset into train and test set
     if len(df_predict) > 1:
         X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
+    # Error catching
     else: 
-        X_train = np.array(df_predict[FEATURE_LIST].iloc[0]).reshape(1, -1) 
-        y_train = np.array(df_predict[target].iloc[0]).reshape(1, -1) 
+        df = pd.DataFrame(0, index=np.arange(2), columns=['x', 'y'])
+        fig = px.scatter(df,
+            x='x', 
+            y='y')
+        return fig, 0, 0
 
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
