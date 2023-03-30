@@ -105,6 +105,7 @@ def do_random_forest(tracks, app):
             x='x', 
             y='y', 
             color='like_prob', 
+            color_continuous_scale='speed',
             hover_data={'x':False, 
                         'y':False,
                         'like_prob':True,
@@ -175,7 +176,7 @@ def lime_plot(x, y, result, rfc):
 def empty_lime():
     # default axis values
     FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-    values = [i/2 if i % 2 == 0 else -i/3 for i in range(0, len(FEATURE_LIST))]
+    values = [0 for i in FEATURE_LIST]
 
     # default plot
     df = pd.DataFrame(values, FEATURE_LIST).reset_index().rename(columns={0: "Values", "index": "Features"})
