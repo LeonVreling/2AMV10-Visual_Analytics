@@ -98,7 +98,8 @@ def do_random_forest(tracks, app):
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
     y_pred = rfc.predict_proba(data)
-    result = pd.concat([df_features.drop_duplicates().reset_index(drop=True), pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
+    result = pd.concat([df_predict.filter(['master_metadata_track_name', 'master_metadata_album_artist_name'] + FEATURE_LIST).drop_duplicates().reset_index(drop=True), 
+                        pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
     fig = px.scatter(result, 
