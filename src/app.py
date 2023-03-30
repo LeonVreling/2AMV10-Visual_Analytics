@@ -60,7 +60,7 @@ def get_top_artists(df, month, top):
 
 def do_random_forest(tracks, app):
     FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-    df_features = pd.read_csv('data/data_elian_features.csv')
+    df_features = pd.read_csv('data/data_folder/data_elian_features.csv')
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
 
     # percentage of average/median to define if song = 'liked'
@@ -160,7 +160,7 @@ def lime_plot(x, y, result, rfc):
     )
     
     # create a barchart of the LIME features
-    df = pd.DataFrame(np.array(explanation.as_list()), columns=['Features', 'Values'])
+    df = pd.DataFrame(sorted(np.array(explanation.as_list()),key=lambda x: x[0]), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
 
@@ -180,7 +180,7 @@ def empty_lime():
     values = [0 for i in FEATURE_LIST]
 
     # default plot
-    df = pd.DataFrame(values, FEATURE_LIST).reset_index().rename(columns={0: "Values", "index": "Features"})
+    df = pd.DataFrame(values, sorted(FEATURE_LIST)).reset_index().rename(columns={0: "Values", "index": "Features"})
     fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
     fig.update_layout(title="Activate LIME by selecting a scatter in the plot")
 
