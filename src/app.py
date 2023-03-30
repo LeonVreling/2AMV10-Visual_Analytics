@@ -59,8 +59,7 @@ def get_top_artists(df, month, top):
     return data
 
 def do_random_forest(tracks, app):
-    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-    df_features = pd.read_csv('data/data_folder/data_elian_features.csv')
+    df_features = pd.read_csv('data/data_elian_features.csv')
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
 
     # percentage of average/median to define if song = 'liked'
@@ -130,9 +129,6 @@ def do_random_forest(tracks, app):
     return fig, result, rfc
 
 def lime_plot(x, y, result, rfc):
-    # list with all song features
-    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-
     # define lime explainer
     lime_explainer = LimeTabularExplainer(
         result[FEATURE_LIST],
@@ -176,7 +172,6 @@ def lime_plot(x, y, result, rfc):
 # default empty lime plot
 def empty_lime():
     # default axis values
-    FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
     values = [0 for i in FEATURE_LIST]
 
     # default plot
@@ -202,6 +197,10 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
+
+
+# list with all song features
+FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
 
 
 # Top 10 songs of user with graph for tempo and duration
@@ -292,7 +291,7 @@ app.layout = dbc.Container([
     dbc.Row([
         dbc.Col([
             dcc.Graph(
-                id='random-forest',
+                id='random-forest-graph',
             )
         ], width=8),
 
@@ -312,14 +311,14 @@ app.layout = dbc.Container([
 @app.callback(
     Output('lime-graph', "figure"),
     Input("dataset", "data"),
-    Input("random-forest", "clickData"),    
+    Input("random-forest-graph", "clickData"),    
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),    
     Input("filter-column", "value"),
     Input("filter-value", "value")
 )
-def click(data, clickData, graph_events, timespan, filter_column, filter):
-    if not clickData:
+def click(data, clickEvent, graph_events, timespan, filter_column, filter):
+    if not clickEvent:
         raise PreventUpdate
 
     df = pd.read_json(data)
@@ -330,28 +329,14 @@ def click(data, clickData, graph_events, timespan, filter_column, filter):
         if filter != "":
             df = df[df[filter_column] == filter]
 
-    # When the graph is first loaded or the scale is reset
-    if "xaxis.autorange" in graph_events or "autosize" in graph_events:
-        top_tracks = get_top_songs_range(df)
-        _, result, rfc = do_random_forest(top_tracks, app)
-        x = clickData['points'][0]['x']
-        y = clickData['points'][0]['y']
-        track_name = clickData['points'][0]['customdata'][2]
-        artist = clickData['points'][0]['customdata'][1]
-        fig = lime_plot(x, y, result, rfc)
-        fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
-
-    # When the user has resized the graph
-    if "xaxis.range[0]" in graph_events:
-        app.logger.info(graph_events)
-        top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
-        _, result, rfc = do_random_forest(top_tracks, app)
-        x = clickData['points'][0]['x']
-        y = clickData['points'][0]['y']
-        track_name = clickData['points'][0]['customdata'][2]
-        artist = clickData['points'][0]['customdata'][1]
-        fig = lime_plot(x, y, result, rfc)
-        fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
+    top_tracks = get_top_songs_range(df)
+    _, result, rfc = do_random_forest(top_tracks, app)
+    x = clickEvent['points'][0]['x']
+    y = clickEvent['points'][0]['y']
+    track_name = clickEvent['points'][0]['customdata'][2]
+    artist = clickEvent['points'][0]['customdata'][1]
+    fig = lime_plot(x, y, result, rfc)
+    fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
 
     return fig
 
@@ -404,7 +389,7 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
 @app.callback(
     Output("top-tracks", "children"),
-    Output("random-forest", "figure"),
+    Output("random-forest-graph", "figure"),
     Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
