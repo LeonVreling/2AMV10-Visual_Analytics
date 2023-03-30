@@ -60,7 +60,7 @@ def get_top_artists(df, month, top):
 
 def do_random_forest(tracks, app):
     FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
-    df_features = pd.read_csv('data/data_folder/data_elian_features.csv')
+    df_features = pd.read_csv('data/data_elian_features.csv')
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
 
     # percentage of average/median to define if song = 'liked'
@@ -161,6 +161,14 @@ def lime_plot(x, y, result, rfc):
     df = pd.DataFrame(np.array(explanation.as_list()), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
+    fig.layout.height = 350 # TODO: Tune height of the graph
+
     return fig
 
 # default empty lime plot
@@ -173,6 +181,14 @@ def empty_lime():
     df = pd.DataFrame(values, FEATURE_LIST).reset_index().rename(columns={0: "Values", "index": "Features"})
     fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
     fig.update_layout(title="Activate LIME by selecting a scatter in the plot")
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
+    fig.layout.height = 350 # TODO: Tune height of the graph
+
     return fig
 
 
@@ -276,27 +292,16 @@ app.layout = dbc.Container([
             dcc.Graph(
                 id='random-forest',
             )
-        ], width=8)
-    ]),
+        ], width=8),
 
-    dbc.Row([
         dbc.Col([
             dcc.Graph(
                 id='lime-graph',
                 figure = empty_lime(),
             )
-        ], width=8)
+        ], width=4)
     ]),
 
-    dbc.Row([
-        dbc.Col([
-            dcc.Slider(
-                step=1,
-                updatemode='drag',
-                id='slider-bubble'
-            ),
-        ])
-    ]),
 
     dcc.Store(id='dataset'),
     dcc.Store(id='slider-marks')
@@ -350,9 +355,6 @@ def click(data, clickData, graph_events, timespan, filter_column, filter):
 
 @app.callback(
     Output("dataset", "data"),
-    Output("slider-bubble", "min"),
-    Output("slider-bubble", "max"),
-    Output("slider-bubble", "marks"),
     Output("slider-marks", "data"),
     Input("datasets-dropdown", "value")
 )
@@ -369,16 +371,7 @@ def load_dataset(path):
     for index, month in enumerate(unique_months):
         slider_marks[index] = month
 
-    # Clean the slider marks to only show one per half year
-    slider_marks_cleaned = {}
-    for key in [*slider_marks]:
-        if key != 0 and key != len(unique_months)-1:
-            if slider_marks[key].endswith("01") or slider_marks[key].endswith("07"):
-                slider_marks_cleaned[key] = slider_marks[key]
-        else:
-            slider_marks_cleaned[key] = slider_marks[key]
-
-    return df.to_json(), 0, len(unique_months)-1, slider_marks_cleaned, json.dumps(slider_marks)
+    return df.to_json(), json.dumps(slider_marks)
 
 
 def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
