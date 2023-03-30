@@ -21,6 +21,7 @@ from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_sc
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 from lime.lime_tabular import LimeTabularExplainer
+import jsonpickle
 
 
 def get_top_songs(df, month, top):
@@ -59,7 +60,7 @@ def get_top_artists(df, month, top):
     return data
 
 def do_random_forest(tracks, app):
-    df_features = pd.read_csv('data/data_elian_features.csv')
+    df_features = pd.read_csv('data/data_elian/data_elian_features.csv')
     df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
 
     # percentage of average/median to define if song = 'liked'
@@ -305,32 +306,28 @@ app.layout = dbc.Container([
 
 
     dcc.Store(id='dataset'),
-    dcc.Store(id='slider-marks')
+    dcc.Store(id='slider-marks'),
+    dcc.Store(id='model'),
+    dcc.Store(id='predictions')
+
 ], style={"max-width": "100%", "paddingTop": "12px"})
+
 
 @app.callback(
     Output('lime-graph', "figure"),
-    Input("dataset", "data"),
-    Input("random-forest-graph", "clickData"),    
-    Input("listening-duration-graph", "relayoutData"),
-    Input("timespan-dropdown", "value"),    
-    Input("filter-column", "value"),
-    Input("filter-value", "value")
+    Input("model", "data"),
+    Input("predictions", "data"),
+    Input("random-forest-graph", "clickData"),
 )
-def click(data, clickEvent, graph_events, timespan, filter_column, filter):
+def click(model, predictions, clickEvent):
     if not clickEvent:
         raise PreventUpdate
 
-    df = pd.read_json(data)
-    df.drop_duplicates(inplace=True)
+    rfc = jsonpickle.decode(model)
+    result = pd.read_json(predictions, orient="index")
 
-    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
-    if filter is not None:
-        if filter != "":
-            df = df[df[filter_column] == filter]
+    app.logger.info(len(result))
 
-    top_tracks = get_top_songs_range(df)
-    _, result, rfc = do_random_forest(top_tracks, app)
     x = clickEvent['points'][0]['x']
     y = clickEvent['points'][0]['y']
     track_name = clickEvent['points'][0]['customdata'][2]
@@ -339,6 +336,7 @@ def click(data, clickEvent, graph_events, timespan, filter_column, filter):
     fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
 
     return fig
+
 
 @app.callback(
     Output("dataset", "data"),
@@ -390,6 +388,8 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 @app.callback(
     Output("top-tracks", "children"),
     Output("random-forest-graph", "figure"),
+    Output("model", "data"),
+    Output("predictions", "data"),
     Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
@@ -414,9 +414,11 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, _, _ = do_random_forest(top_tracks, app)
+        fig_rf, result, rfc = do_random_forest(top_tracks, app)
 
-        return top_songs_layout, fig_rf
+        app.logger.info(len(result))
+
+        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
@@ -424,9 +426,9 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, _, _ = do_random_forest(top_tracks, app)
+        fig_rf, result, rfc = do_random_forest(top_tracks, app)
 
-        return top_songs_layout, fig_rf
+        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
 
 def convert_to_top_tracks_list(data):
@@ -482,6 +484,7 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
     fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig
+
 
 # Run the app
 if __name__ == '__main__':
