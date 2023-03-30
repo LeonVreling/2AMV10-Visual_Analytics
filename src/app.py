@@ -63,7 +63,8 @@ def get_top_artists(df, month, top):
 def do_random_forest(tracks, app):
     #TODO - zorg dat hij de features van de geselecteerde persoon pakt
     #TODO ? slider voor minimaal aantal streams per liedje
-    features = pd.read_csv('data/data_folder/data_elian_features.csv').rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    #TODO - kijken naar threshold voor liked
+    features = pd.read_csv('data/data_folder/data_marlou_features.csv').rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
     
     # turn artist name into numeric value
@@ -76,7 +77,6 @@ def do_random_forest(tracks, app):
     target = 'liked'                #could be genre?
 
     if len(df_predict) < 2: 
-        df = pd.DataFrame(0, index=np.arange(2), columns=['x', 'y'])
         fig = px.scatter()
         fig.update_layout(title="<b> There are too few samples for a random forest prediction <b>")
         return fig, pd.DataFrame(), 0
@@ -86,15 +86,22 @@ def do_random_forest(tracks, app):
     # Train the random forest model on train set
     rfc.fit(df_predict[FEATURE_LIST], df_predict[target])
 
-    reducer = umap.UMAP(random_state=0)
     data = df_predict[FEATURE_LIST]
+    y_pred = rfc.predict_proba(data)
+    # Error catching
+    if y_pred.shape[1] < 2:
+        fig = px.scatter()
+        fig.update_layout(title="<b> There are too few samples for a random forest prediction <b>")
+        return fig, pd.DataFrame(), 0
+    
+    reducer = umap.UMAP(random_state=0, init='random')
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
-    y_pred = rfc.predict_proba(data)
     result = pd.concat([df_predict.reset_index(drop=True), 
                         pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
+    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
     result = result[result['count'] > 1]
     fig = px.scatter(result, 
             x='x', 
