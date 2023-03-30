@@ -22,6 +22,7 @@ from sklearn.preprocessing import StandardScaler
 import numpy as np
 from lime.lime_tabular import LimeTabularExplainer
 import jsonpickle
+from sklearn.preprocessing import LabelEncoder
 
 
 def get_top_songs(df, month, top):
@@ -60,48 +61,41 @@ def get_top_artists(df, month, top):
     return data
 
 def do_random_forest(tracks, app):
-    df_features = pd.read_csv('data/data_elian/data_elian_features.csv')
-    df_features = df_features.filter(['master_metadata_track_name', 'master_metadata_album_artist_name', 'spotify_track_uri'] + FEATURE_LIST)
+    #TODO - zorg dat hij de features van de geselecteerde persoon pakt
+    #TODO ? slider voor minimaal aantal streams per liedje
+    features = pd.read_csv('data/data_folder/data_elian_features.csv').rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    df_complete = pd.merge(tracks, features, on="spotify_track_uri")
+    
+    # turn artist name into numeric value
+    df_complete['artist_enc'] = LabelEncoder().fit_transform(df_complete[['master_metadata_album_artist_name']])
 
-    # percentage of average/median to define if song = 'liked'
-    percentage = 2
-    median_freq = tracks['count'].median() # median freq
-    threshold_freq = percentage * median_freq # threshold freq based on average/median
-    tracks['liked'] = tracks['count'] > threshold_freq # liked=True when > threshold
-    df_predict = pd.merge(df_features, tracks, on=['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name'])
-    df_predict = df_predict.drop(['count'], axis=1)
+    tracks['liked'] = tracks['count'] > 20 # liked=True when > threshold
+    df_predict = pd.merge(df_complete, tracks[['spotify_track_uri', 'liked']], on=['spotify_track_uri'])
 
     # Define the target column of the model
     target = 'liked'                #could be genre?
-    
-    # Split the dataset into train and test set
-    if len(df_predict) > 1:
-        X_train, X_test, y_train, y_test = train_test_split(df_predict[FEATURE_LIST], df_predict[target], train_size=0.8, random_state=0)
-    # Error catching
-    else: 
+
+    if len(df_predict) < 2: 
         df = pd.DataFrame(0, index=np.arange(2), columns=['x', 'y'])
-        fig = px.scatter(df,
-            x='x', 
-            y='y')
-        fig.update_layout(title="There are too few samples for a random forest prediction")
-        return fig, 0, 0
+        fig = px.scatter()
+        fig.update_layout(title="<b> There are too few samples for a random forest prediction <b>")
+        return fig, pd.DataFrame(), 0
 
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
-    rfc = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=0)
+    rfc = RandomForestClassifier(n_estimators=500, max_depth=50, random_state=0)
     # Train the random forest model on train set
-    rfc.fit(X_train, y_train)
+    rfc.fit(df_predict[FEATURE_LIST], df_predict[target])
 
-    #UMAP
     reducer = umap.UMAP(random_state=0)
     data = df_predict[FEATURE_LIST]
-    data = data.drop_duplicates()
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
     y_pred = rfc.predict_proba(data)
-    result = pd.concat([df_predict.filter(['master_metadata_track_name', 'master_metadata_album_artist_name'] + FEATURE_LIST).drop_duplicates().reset_index(drop=True), 
+    result = pd.concat([df_predict.reset_index(drop=True), 
                         pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
+    result = result[result['count'] > 1]
     fig = px.scatter(result, 
             x='x', 
             y='y', 
@@ -113,6 +107,8 @@ def do_random_forest(tracks, app):
                         'master_metadata_album_artist_name':True,
                         'master_metadata_track_name':True
                         })
+
+
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
@@ -151,15 +147,15 @@ def lime_plot(track_name, artist, result, rfc):
     explanation = lime_explainer.explain_instance(
         sample[FEATURE_LIST].iloc[0],
         rfc.predict_proba,
-        num_features=10,
-        num_samples=5000,
+        num_features=len(FEATURE_LIST),
+        num_samples=100,
         distance_metric="euclidean",
     )
     
     # create a barchart of the LIME features
     df = pd.DataFrame(sorted(np.array(explanation.as_list()),key=lambda x: x[0]), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
-    fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
+    fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
     fig.layout.margin.b = 0
     fig.layout.margin.t = 40
@@ -177,8 +173,8 @@ def empty_lime():
 
     # default plot
     df = pd.DataFrame(values, sorted(FEATURE_LIST)).reset_index().rename(columns={0: "Values", "index": "Features"})
-    fig = px.bar(df, x='Values', y='Features', orientation='h', barmode='relative')
-    fig.update_layout(title="Activate LIME by selecting a scatter in the plot")
+    fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
+    fig.update_layout(title="<b> Activate LIME by selecting a scatter in the plot <b>")
 
     fig.layout.margin.b = 0
     fig.layout.margin.t = 40
@@ -189,6 +185,9 @@ def empty_lime():
 
     return fig
 
+# list with all song features
+FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'artist_enc', 'duration_ms']
+
 
 # Authenticate using the Spotify server
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae10bdba19854",
@@ -198,10 +197,6 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 
 
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
-
-
-# list with all song features
-FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo']
 
 
 # Top 10 songs of user with graph for tempo and duration
@@ -329,7 +324,7 @@ def click(model, predictions, clickEvent):
     track_name = clickEvent['points'][0]['customdata'][2]
     artist = clickEvent['points'][0]['customdata'][1]
     fig = lime_plot(track_name, artist, result, rfc)
-    fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
+    fig.update_layout(title="<b> LIME plot for <b>" + track_name + "<b> from <b>" + artist)
 
     return fig
 
@@ -466,7 +461,7 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
 
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-    fig = px.bar(duration, x=timespan, y='hours', title='Total duration per {}'.format(timespan)) \
+    fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1, title='<b> Total duration per {} <b>'.format(timespan)) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
                 .update_yaxes(title = 'Total hours', visible = True, showticklabels = True, fixedrange = True)
 
