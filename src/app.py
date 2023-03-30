@@ -129,7 +129,7 @@ def do_random_forest(tracks, app):
 
     return fig, result, rfc
 
-def lime_plot(x, y, result, rfc):
+def lime_plot(track_name, artist, result, rfc):
     # define lime explainer
     lime_explainer = LimeTabularExplainer(
         result[FEATURE_LIST],
@@ -141,7 +141,7 @@ def lime_plot(x, y, result, rfc):
     )
 
     # selected sample from random forest plot
-    sample = result.loc[(result['x'] == x) & (result['y'] == y)]
+    sample = result.loc[(result['master_metadata_track_name'] == track_name) & (result['master_metadata_album_artist_name'] == artist)]
 
     # Error catching
     if len(sample) == 0:
@@ -326,13 +326,9 @@ def click(model, predictions, clickEvent):
     rfc = jsonpickle.decode(model)
     result = pd.read_json(predictions, orient="index")
 
-    app.logger.info(len(result))
-
-    x = clickEvent['points'][0]['x']
-    y = clickEvent['points'][0]['y']
     track_name = clickEvent['points'][0]['customdata'][2]
     artist = clickEvent['points'][0]['customdata'][1]
-    fig = lime_plot(x, y, result, rfc)
+    fig = lime_plot(track_name, artist, result, rfc)
     fig.update_layout(title="LIME plot for " + track_name + " from " + artist)
 
     return fig
@@ -416,13 +412,10 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
         fig_rf, result, rfc = do_random_forest(top_tracks, app)
 
-        app.logger.info(len(result))
-
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
-        app.logger.info(graph_events)
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
