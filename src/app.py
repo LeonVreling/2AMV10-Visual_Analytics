@@ -236,9 +236,7 @@ app.layout = dbc.Container([
 
             dcc.Graph(
                 id="listening-duration-graph",
-                config = {
-                    "displayModeBar": False
-                }
+                config = {"modeBarButtonsToRemove": ["lasso2d","pan2d","select2d"]}
             )
         ], width=2),
 
@@ -271,11 +269,9 @@ app.layout = dbc.Container([
     ]),
 
 
-    dcc.Store(id='full-dataset'),
-    dcc.Store(id='filtered-dataset'),
+    dcc.Store(id='dataset'),
     dcc.Store(id='model'),
-    dcc.Store(id='predictions'),
-    dcc.Store(id='temp')
+    dcc.Store(id='predictions')
 
 ], style={"max-width": "100%", "paddingTop": "12px"})
 
@@ -305,6 +301,19 @@ def click(model, predictions, clickEvent):
     return dcc.Graph(figure=fig)
 
 
+@app.callback(
+    Output("dataset", "data"),
+    Input("datasets-dropdown", "value")
+)
+def load_dataset(path):
+
+    # Load the data set
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    return df.to_json()
+
+
 def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
 
     if start_range is not None:
@@ -332,40 +341,12 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
 
 @app.callback(
-    Output("full-dataset", "data"),
-    Output("filtered-dataset", "data"),
-    Input("datasets-dropdown", "value"),
-    Input("listening-duration-graph", "selectedData"),
-    Input("timespan-dropdown", "value"),
-    Input("filter-column", "value"),
-    Input("filter-value", "value")
-)
-def load_and_filter_data(path, selection, timespan, filter_column, filter):
-
-    full_dataset = pd.read_csv(path)
-    full_dataset.drop_duplicates(inplace=True)
-
-    df = full_dataset.copy()
-
-    if filter is not None:
-        if filter != "":
-            df = df[df[filter_column] == filter]
-
-    if selection is not None and selection['points'] != []:
-        selected_points = [point["x"] for point in selection['points']]
-        app.logger.info(selected_points)
-        df = df[df[timespan].isin(selected_points)]
-
-    return full_dataset.to_json(), df.to_json()
-
-
-@app.callback(
     Output("top-tracks", "children"),
     Output("random-forest-graph", "figure"),
     Output("model", "data"),
     Output("predictions", "data"),
     Output("predicted-tracks", "children"),
-    Input("full-dataset", "data"),
+    Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
@@ -446,13 +427,20 @@ def convert_to_top_tracks_list(data):
 
 @app.callback(
     Output("listening-duration-graph", "figure"),
-    Input("datasets-dropdown", "value"),
-    Input("timespan-dropdown", "value")
+    Input("dataset", "data"),
+    Input("timespan-dropdown", "value"),
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
 )
-def update_duration_listening_graph(path, timespan):
+def update_duration_listening_graph(data, timespan, filter_column, filter):
 
-    df = pd.read_csv(path)
+    df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
+
+    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
 
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
@@ -465,8 +453,6 @@ def update_duration_listening_graph(path, timespan):
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
     fig.layout.height = 150 # TODO: Tune height of the graph
-
-    fig.update_layout(dragmode='select')
 
     return fig
 
