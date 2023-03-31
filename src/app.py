@@ -60,11 +60,9 @@ def get_top_artists(df, month, top):
     
     return data
 
-def do_random_forest(tracks, app):
-    #TODO - zorg dat hij de features van de geselecteerde persoon pakt
+def do_random_forest(tracks, app, features):
     #TODO ? slider voor minimaal aantal streams per liedje
     #TODO - kijken naar threshold voor liked
-    features = pd.read_csv('data/data_folder/data_marlou_features.csv').rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
     
     # turn artist name into numeric value
@@ -393,15 +391,20 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
-    Input("filter-value", "value")
+    Input("filter-value", "value"),
+    Input("datasets-dropdown", "value")
 )
-def get_scale_graph(data, graph_events, timespan, filter_column, filter):
+def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset_dropdown):
 
     if graph_events == {}:
         raise PreventUpdate
 
     df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
+
+    person = dataset_dropdown.split('/')[2].split("_")[1].capitalize()[:-4].lower()
+
+    features = pd.read_csv('data/data_{0}/data_{0}_features.csv'.format(person)).rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
     if filter is not None:
@@ -413,7 +416,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, app)
+        fig_rf, result, rfc = do_random_forest(top_tracks, app, features)
 
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
@@ -422,7 +425,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter):
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, app)
+        fig_rf, result, rfc = do_random_forest(top_tracks, app, features)
 
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
