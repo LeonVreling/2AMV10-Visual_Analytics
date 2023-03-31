@@ -135,7 +135,7 @@ def lime_plot(track_name, artist, result, rfc):
 
 def new_top_songs(data, rfc, top_count):
     # Keep the songs that the user has not listened to
-    X_test = pd.merge(features, data, indicator=True, how='outer').query('_merge=="left_only"').drop('_merge', axis=1)
+    X_test = pd.merge(all_features, data, indicator=True, how='outer').query('_merge=="left_only"').drop('_merge', axis=1)
 
     # Make predictions on the not yet heard songs
     y_pred = rfc.predict_proba(X_test[FEATURE_LIST])
@@ -170,7 +170,7 @@ def new_top_songs(data, rfc, top_count):
 
 # list with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
-features = pd.read_csv('data/data_folder/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
+all_features = pd.read_csv('data/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
 
 
 # Authenticate using the Spotify server
@@ -352,9 +352,9 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
     df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
 
-    person = dataset_dropdown.split('/')[2].split("_")[1].capitalize()[:-4].lower()
-
-    features = pd.read_csv('data/data_{0}/data_{0}_features.csv'.format(person)).rename(columns={"uri": "spotify_track_uri"}).drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    # Only get the features of songs that the selected person has listened to
+    features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
+    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
     if filter is not None:
