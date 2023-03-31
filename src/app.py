@@ -362,6 +362,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
     # Only get the features of songs that the selected person has listened to
     features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
     features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    features.drop_duplicates(inplace=True)
 
     # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
     if filter is not None:
