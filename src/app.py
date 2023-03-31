@@ -232,6 +232,11 @@ app.layout = dbc.Container([
                 type="text",
                 placeholder="Filter",
                 debounce=True # Only execute callback on enter or losing focus
+            ),
+
+            dcc.Graph(
+                id="listening-duration-graph",
+                config = {"modeBarButtonsToRemove": ["lasso2d","pan2d","select2d"]}
             )
         ], width=2),
 
@@ -241,10 +246,7 @@ app.layout = dbc.Container([
         ], width=3),
 
         dbc.Col([
-            dcc.Graph(
-                id="listening-duration-graph",
-                config = {"modeBarButtonsToRemove": ["lasso2d","pan2d","select2d"]}
-            )
+            
         ], width=7)
 
     ]),
@@ -442,15 +444,15 @@ def update_duration_listening_graph(data, timespan, filter_column, filter):
 
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-    fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1, title='<b> Total duration per {} <b>'.format(timespan)) \
+    fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
                 .update_yaxes(title = 'Total hours', visible = True, showticklabels = True, fixedrange = True)
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
+    fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
-    fig.layout.height = 350 # TODO: Tune height of the graph
+    fig.layout.height = 150 # TODO: Tune height of the graph
 
     return fig
 
