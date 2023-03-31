@@ -146,7 +146,7 @@ def lime_plot(track_name, artist, result, rfc):
 
     # Error catching
     if len(sample) == 0:
-        return empty_lime()
+        return "Something went wrong, please try selecting a point again"
     
     # explain the sample
     explanation = lime_explainer.explain_instance(
@@ -171,24 +171,6 @@ def lime_plot(track_name, artist, result, rfc):
 
     return fig
 
-# default empty lime plot
-def empty_lime():
-    # default axis values
-    values = [0 for i in FEATURE_LIST]
-
-    # default plot
-    df = pd.DataFrame(values, sorted(FEATURE_LIST)).reset_index().rename(columns={0: "Values", "index": "Features"})
-    fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
-    fig.update_layout(title="<b> Activate LIME by selecting a scatter in the plot <b>")
-
-    fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
-    fig.layout.margin.l = 0
-    fig.layout.margin.r = 0
-
-    fig.layout.height = 350 # TODO: Tune height of the graph
-
-    return fig
 
 # list with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'artist_enc', 'duration_ms']
@@ -298,11 +280,8 @@ app.layout = dbc.Container([
         ], width=8),
 
         dbc.Col([
-            dcc.Graph(
-                id='lime-graph',
-                figure = empty_lime(),
-            )
-        ], width=4)
+            html.P("Select a point in the graph to see why the prediciton was made")
+        ], width=4, id='lime-graph')
     ]),
 
 
@@ -315,7 +294,7 @@ app.layout = dbc.Container([
 
 
 @app.callback(
-    Output('lime-graph', "figure"),
+    Output('lime-graph', "children"),
     Input("model", "data"),
     Input("predictions", "data"),
     Input("random-forest-graph", "clickData"),
@@ -330,9 +309,13 @@ def click(model, predictions, clickEvent):
     track_name = clickEvent['points'][0]['customdata'][2]
     artist = clickEvent['points'][0]['customdata'][1]
     fig = lime_plot(track_name, artist, result, rfc)
-    fig.update_layout(title="<b> LIME plot for <b>" + track_name + "<b> from <b>" + artist)
 
-    return fig
+    # Error handling
+    if type(fig) == str:
+        return html.P(fig)
+
+    fig.update_layout(title="<b> LIME plot for <b>" + track_name + "<b> by <b>" + artist)
+    return dcc.Graph(figure=fig)
 
 
 @app.callback(
