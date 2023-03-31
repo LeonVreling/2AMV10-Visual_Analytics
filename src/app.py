@@ -9,7 +9,6 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
 import json
-from math import floor, ceil
 import umap
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -305,22 +304,7 @@ def click(model, predictions, clickEvent):
     return dcc.Graph(figure=fig)
 
 
-def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
-
-    if start_range is not None:
-        if range_column == "year" or range_column == "hour":
-            start = ceil(start_range)
-            end = floor(end_range)
-            df = df[df[range_column].between(start, end)]
-        if range_column == "month":
-            months = df["month"].unique().tolist()
-
-            start_index = months.index(start_range[:7])
-            end_index = months.index(end_range[:7])
-
-            months_to_filter = months[start_index : end_index+1]
-
-            df = df[df[range_column].isin(months_to_filter)]
+def get_top_songs(df):
 
     tracks = df[['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name']].copy()
     counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
@@ -333,6 +317,17 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
 @app.callback(
     Output("full-dataset", "data"),
+    Input("datasets-dropdown", "value")
+)
+def load_data(path):
+
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    return df.to_json()
+
+
+@app.callback(
     Output("filtered-dataset", "data"),
     Input("datasets-dropdown", "value"),
     Input("listening-duration-graph", "selectedData"),
@@ -342,10 +337,8 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 )
 def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
-    full_dataset = pd.read_csv(path)
-    full_dataset.drop_duplicates(inplace=True)
-
-    df = full_dataset.copy()
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
 
     if filter is not None:
         if filter != "":
@@ -356,74 +349,42 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
         app.logger.info(selected_points)
         df = df[df[timespan].isin(selected_points)]
 
-    return full_dataset.to_json(), df.to_json()
+    return df.to_json()
 
 
 @app.callback(
-    Output("top-tracks", "children"),
     Output("random-forest-graph", "figure"),
     Output("model", "data"),
     Output("predictions", "data"),
-    Output("predicted-tracks", "children"),
     Input("full-dataset", "data"),
-    Input("listening-duration-graph", "relayoutData"),
-    Input("timespan-dropdown", "value"),
-    Input("filter-column", "value"),
-    Input("filter-value", "value"),
-    Input("datasets-dropdown", "value")
 )
-def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset_dropdown):
-
-    if graph_events == {}:
-        raise PreventUpdate
-
+def train_random_forest(data):
     df = pd.read_json(data)
-    df.drop_duplicates(inplace=True)
 
-    # Only get the features of songs that the selected person has listened to
+    # Get the features of the songs that are in the dataset
     features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
     features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
     features.drop_duplicates(inplace=True)
 
-    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
-    if filter is not None:
-        if filter != "":
-            df = df[df[filter_column] == filter]
+    top_tracks = get_top_songs(df)
 
-    # When the graph is first loaded or the scale is reset
-    if "xaxis.autorange" in graph_events or "autosize" in graph_events:
-        top_tracks = get_top_songs_range(df)
+    fig_rf, result, rfc = do_random_forest(top_tracks, features)
 
-        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, features)
-
-        AMOUNT_OF_PREDICTIONS = 10
-
-        predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
-
-        predicted_songs_list = []
-
-        # TODO: Make a nice layout to show the predicted top songs
-        for i in range(AMOUNT_OF_PREDICTIONS):
-            predicted_songs_list.append(
-                html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
-            )
-
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index")), html.Ul(children=predicted_songs_list)
-
-    # When the user has resized the graph
-    if "xaxis.range[0]" in graph_events:
-        top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
-
-        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, features)
-
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+    return fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
 
-def convert_to_top_tracks_list(data):
+@app.callback(
+    Output("top-tracks", "children"),
+    Input("filtered-dataset", "data")
+)
+def display_top_tracks(data):
+    
+    df = pd.read_json(data)
+
+    top_tracks = get_top_songs(df).head(5)
+
     layout = []
-    for index, track in data.iterrows():
+    for index, track in top_tracks.iterrows():
         album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
@@ -441,7 +402,33 @@ def convert_to_top_tracks_list(data):
         ])
 
         layout.append(song_tile)
+
     return layout
+
+
+@app.callback(
+    Output("predicted-tracks", "children"),
+    Input("full-dataset", "data"),
+    Input("model", "data")
+)
+def predict_new_tracks(data, model):
+    
+    df = pd.read_json(data)
+    rfc = jsonpickle.decode(model)
+
+    AMOUNT_OF_PREDICTIONS = 10
+
+    predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+
+    predicted_songs_list = []
+
+    # TODO: Make a nice layout to show the predicted top songs
+    for i in range(AMOUNT_OF_PREDICTIONS):
+        predicted_songs_list.append(
+            html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
+        )
+
+    return html.Ul(children=predicted_songs_list)
 
 
 @app.callback(
