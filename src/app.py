@@ -236,6 +236,7 @@ app.layout = dbc.Container([
         ], width=2),
 
         dbc.Col([
+            html.H4("Your top songs"),
             html.Div(id="top-tracks")
         ], width=3),
 
@@ -253,11 +254,16 @@ app.layout = dbc.Container([
             dcc.Graph(
                 id='random-forest-graph',
             )
-        ], width=8),
+        ], width=6),
 
         dbc.Col([
             html.P("Select a point in the graph to see why the prediciton was made")
-        ], width=4, id='lime-graph')
+        ], width=3, id='lime-graph'),
+
+        dbc.Col([
+            html.H4("Predicted liked songs"),
+            html.Div(id="predicted-tracks")
+        ], width=3)
     ]),
 
 
@@ -337,6 +343,7 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
     Output("random-forest-graph", "figure"),
     Output("model", "data"),
     Output("predictions", "data"),
+    Output("predicted-tracks", "children"),
     Input("dataset", "data"),
     Input("listening-duration-graph", "relayoutData"),
     Input("timespan-dropdown", "value"),
@@ -368,10 +375,19 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
         fig_rf, result, rfc = do_random_forest(top_tracks, features)
 
-        #TODO remove when the list is implemented on the dashboard
-        new_top_songs(df, rfc, 10)
+        AMOUNT_OF_PREDICTIONS = 10
 
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+        predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+
+        predicted_songs_layout = []
+
+        # TODO: Make a nice layout to show the predicted top songs
+        for i in range(AMOUNT_OF_PREDICTIONS):
+            predicted_songs_layout.append(
+                html.Span("{} - {}".format(predicted_tracks[i], predicted_artists[i]))
+            )
+
+        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index")), predicted_songs_layout
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
