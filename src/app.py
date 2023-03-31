@@ -5,19 +5,16 @@ from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
-from colorhash import ColorHash
-import circlify
 import json
 from math import floor, ceil
 import umap
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+# from sklearn.model_selection import train_test_split
+# from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 from lime.lime_tabular import LimeTabularExplainer
@@ -25,42 +22,7 @@ import jsonpickle
 from sklearn.preprocessing import LabelEncoder
 
 
-def get_top_songs(df, month, top):
-    df = df[df['month'] == month].copy()
-    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
-    counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
-    df = df.drop_duplicates().reset_index().drop(columns=['index'])
-    df['count'] = counts['spotify_track_uri']
-    df = df.sort_values(by=['count'], ascending=False)
-    top_tracks = [*df['master_metadata_track_name'][:top]]
-    counts = [*df['count'][:top]]
-    colors = []
-    for i in top_tracks:
-        colors.append(ColorHash(i).hex)
-    
-    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
-    
-    return data
-
-
-def get_top_artists(df, month, top):
-    df = df[df['month'] == month].copy()
-    df = df[['master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name', 'spotify_track_uri']].copy()
-    counts = df['master_metadata_album_artist_name'].value_counts(sort=False).reset_index()
-    df = df.drop_duplicates(subset='master_metadata_album_artist_name').reset_index().drop(columns=['index'])
-    df['count'] = counts['master_metadata_album_artist_name']
-    df = df.sort_values(by=['count'], ascending=False)
-    top_tracks = [*df['master_metadata_album_artist_name'][:top]]
-    counts = [*df['count'][:top]]
-    colors = []
-    for i in top_tracks:
-        colors.append(ColorHash(i).hex)
-    
-    data = {"tracks":top_tracks, "counts":counts, "colors":colors}
-    
-    return data
-
-def do_random_forest(tracks, app, features):
+def do_random_forest(tracks, features):
     #TODO ? slider voor minimaal aantal streams per liedje
     #TODO - kijken naar threshold voor liked
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
@@ -121,6 +83,8 @@ def do_random_forest(tracks, app, features):
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
 
+    fig.update_coloraxes(colorbar_title_text="Likeliness")
+
     fig.layout.margin.b = 0
     fig.layout.margin.t = 40
     fig.layout.margin.l = 0
@@ -129,6 +93,7 @@ def do_random_forest(tracks, app, features):
     fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig, result, rfc
+
 
 def lime_plot(track_name, artist, result, rfc):
     # define lime explainer
@@ -186,40 +151,13 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 
 
-# Top 10 songs of user with graph for tempo and duration
-top_tracks = sp.current_user_top_tracks(limit=10, time_range='short_term')
-top_tracks = [{"title": track["name"], "artist": track["artists"][0]["name"], "id": track["id"]} for track in top_tracks["items"]]
-
-top_tracks_features = sp.audio_features(tracks=[track["id"] for track in top_tracks])
-
-
-# RadViz for two songs
-index_first_song = 0
-index_second_song = 1
-
-categories = ["acousticness", "danceability", "energy", "instrumentalness", "liveness", "loudness", "speechiness", "valence"]
-
-# Scale of the different categories, according to https://developer.spotify.com/documentation/web-api/reference/#/operations/get-audio-features
-# acousticness: [0,1]
-# danceability: [0,1]
-# energy: [0,1]
-# instrumentalness: [0,1]
-# liveness: [0,1]
-# loudness: typically [-60,0]
-# speechiness: [0,1]
-# valence: [0,1]
-# --> Need to scale the loudness, using affine transformation
-
-# new_loudness = (original_loudness + 60) * (1 / 60) + 0 = 1 + original_loudness / 60
-
 ### Visualisation of personal listening over time
 # Getting the datasets
 data_files = []
 for data_folder in [folder for folder in os.listdir("data") if "." not in folder]:
     for file in os.listdir("data/{}".format(data_folder)):
-        if file.endswith(".csv"):
-            if "features" not in file:
-                data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
+        if file.endswith(".csv") and "features" not in file:
+            data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
 
 # Setting the various options for the timespan
 timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "label": "per month"}, {"value": "hour", "label": "per hour of the day"}]
@@ -229,17 +167,22 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
-            # TODO: Add labels to the different options
+            html.Span("Dataset:"),
+
             dcc.Dropdown(
                 id="datasets-dropdown",
                 options=data_files,
-                value=data_files[0]["value"]
+                value=data_files[0]["value"],
+                clearable=False
             ),
+
+            html.Span("Group by:"),
 
             dcc.Dropdown(
                 id="timespan-dropdown",
                 options=timespan_options,
-                value=timespan_options[0]["value"]
+                value=timespan_options[0]["value"],
+                clearable=False
             ),
 
             dbc.RadioItems(
@@ -286,7 +229,6 @@ app.layout = dbc.Container([
 
 
     dcc.Store(id='dataset'),
-    dcc.Store(id='slider-marks'),
     dcc.Store(id='model'),
     dcc.Store(id='predictions')
 
@@ -320,7 +262,6 @@ def click(model, predictions, clickEvent):
 
 @app.callback(
     Output("dataset", "data"),
-    Output("slider-marks", "data"),
     Input("datasets-dropdown", "value")
 )
 def load_dataset(path):
@@ -329,14 +270,7 @@ def load_dataset(path):
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
-    unique_months = df["month"].unique()
-
-    # Compute the slider marks
-    slider_marks = {}
-    for index, month in enumerate(unique_months):
-        slider_marks[index] = month
-
-    return df.to_json(), json.dumps(slider_marks)
+    return df.to_json()
 
 
 def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
@@ -399,7 +333,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
         top_tracks = get_top_songs_range(df)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, app, features)
+        fig_rf, result, rfc = do_random_forest(top_tracks, features)
 
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
@@ -408,7 +342,7 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
         top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, app, features)
+        fig_rf, result, rfc = do_random_forest(top_tracks, features)
 
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 

@@ -2,8 +2,6 @@ pandas
 dash
 dash-bootstrap-components
 spotipy
-colorhash
-circlify
 umap-learn==0.5.3
 sklearn
 lime
