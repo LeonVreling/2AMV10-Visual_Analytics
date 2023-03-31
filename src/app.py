@@ -341,6 +341,43 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
 
 @app.callback(
+    Output("full-dataset", "data"),
+    Input("datasets-dropdown", "value")
+)
+def load_data(path):
+
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    return df.to_json()
+
+
+@app.callback(
+    Output("filtered-dataset", "data"),
+    Input("datasets-dropdown", "value"),
+    Input("listening-duration-graph", "selectedData"),
+    Input("timespan-dropdown", "value"),
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
+)
+def load_and_filter_data(path, selection, timespan, filter_column, filter):
+
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
+    if filter is not None:
+        if filter != "":
+            df = df[df[filter_column] == filter]
+
+    if selection is not None and selection['points'] != []:
+        selected_points = [point["x"] for point in selection['points']]
+        app.logger.info(selected_points)
+        df = df[df[timespan].isin(selected_points)]
+
+    return df.to_json()
+
+
+@app.callback(
     Output("top-tracks", "children"),
     Output("random-forest-graph", "figure"),
     Output("model", "data"),
