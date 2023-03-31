@@ -145,7 +145,7 @@ def new_top_songs(data, rfc, top_count):
 
     # Create lists for top tracks and corresponding artists
     tracks = []
-    artist = []
+    artists = []
 
     i = 0
     j = len(tracks)
@@ -153,17 +153,17 @@ def new_top_songs(data, rfc, top_count):
     while j < top_count:
         # Retrieve track name and corresponding artist from Spotipy
         track_name = sp.track(sort_pred[i])['name']
-        artists = sp.track(sort_pred[i])['album']['artists'][0]['name']
+        artist = sp.track(sort_pred[i])['album']['artists'][0]['name']
         i = i + 1
         # Filter the songs that the user has not heard yet 
         # and make sure a song is not recommended twice (album vs single version)
         if len(data[data['master_metadata_track_name'] == track_name]) == 0 and track_name not in tracks:
             tracks.append(track_name)
-            artist.append(artists)
+            artists.append(artist)
             j = j + 1
 
     app.logger.info(tracks)
-    app.logger.info(artist)
+    app.logger.info(artists)
 
     return tracks, artists
 
@@ -379,15 +379,15 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
 
         predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
 
-        predicted_songs_layout = []
+        predicted_songs_list = []
 
         # TODO: Make a nice layout to show the predicted top songs
         for i in range(AMOUNT_OF_PREDICTIONS):
-            predicted_songs_layout.append(
-                html.Span("{} - {}".format(predicted_tracks[i], predicted_artists[i]))
+            predicted_songs_list.append(
+                html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
             )
 
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index")), predicted_songs_layout
+        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index")), html.Ul(children=predicted_songs_list)
 
     # When the user has resized the graph
     if "xaxis.range[0]" in graph_events:
