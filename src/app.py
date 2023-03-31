@@ -236,7 +236,8 @@ data_files = []
 for data_folder in [folder for folder in os.listdir("data") if "." not in folder]:
     for file in os.listdir("data/{}".format(data_folder)):
         if file.endswith(".csv"):
-            data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
+            if "features" not in file:
+                data_files.append({"value": "data/{}/{}".format(data_folder, file), "label": file.split("_")[1].capitalize()[:-4]})
 
 # Setting the various options for the timespan
 timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "label": "per month"}, {"value": "hour", "label": "per hour of the day"}]
