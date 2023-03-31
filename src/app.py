@@ -26,9 +26,6 @@ def do_random_forest(tracks, features):
     #TODO ? slider voor minimaal aantal streams per liedje
     #TODO - kijken naar threshold voor liked
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
-    
-    # turn artist name into numeric value
-    df_complete['artist_enc'] = LabelEncoder().fit_transform(df_complete[['master_metadata_album_artist_name']])
 
     tracks['liked'] = tracks['count'] > 20 # liked=True when > threshold
     df_predict = pd.merge(df_complete, tracks[['spotify_track_uri', 'liked']], on=['spotify_track_uri'])
@@ -96,7 +93,7 @@ def do_random_forest(tracks, features):
 
 
 def lime_plot(track_name, artist, result, rfc):
-    # define lime explainer
+    # Define lime explainer
     lime_explainer = LimeTabularExplainer(
         result[FEATURE_LIST],
         mode="classification",
@@ -106,14 +103,14 @@ def lime_plot(track_name, artist, result, rfc):
         feature_selection="forward_selection",
     )
 
-    # selected sample from random forest plot
+    # Selected sample from random forest plot
     sample = result.loc[(result['master_metadata_track_name'] == track_name) & (result['master_metadata_album_artist_name'] == artist)]
 
     # Error catching
     if len(sample) == 0:
         return "Something went wrong, please try selecting a point again"
     
-    # explain the sample
+    # Explain the sample
     explanation = lime_explainer.explain_instance(
         sample[FEATURE_LIST].iloc[0],
         rfc.predict_proba,
@@ -122,7 +119,7 @@ def lime_plot(track_name, artist, result, rfc):
         distance_metric="euclidean",
     )
     
-    # create a barchart of the LIME features
+    # Create a barchart of the LIME features
     df = pd.DataFrame(sorted(np.array(explanation.as_list()),key=lambda x: x[0]), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
@@ -136,9 +133,44 @@ def lime_plot(track_name, artist, result, rfc):
 
     return fig
 
+def new_top_songs(data, rfc, top_count):
+    # Keep the songs that the user has not listened to
+    X_test = pd.merge(features, data, indicator=True, how='outer').query('_merge=="left_only"').drop('_merge', axis=1)
+
+    # Make predictions on the not yet heard songs
+    y_pred = rfc.predict_proba(X_test[FEATURE_LIST])
+
+    # Sort on highest like probability
+    sort_pred = [x for _, x in sorted(zip(y_pred[:,0], list(X_test['spotify_track_uri'])))]
+
+    # Create lists for top tracks and corresponding artists
+    tracks = []
+    artist = []
+
+    i = 0
+    j = len(tracks)
+    # Continue until there are top_count unique songs recommended
+    while j < top_count:
+        # Retrieve track name and corresponding artist from Spotipy
+        track_name = sp.track(sort_pred[i])['name']
+        artists = sp.track(sort_pred[i])['album']['artists'][0]['name']
+        i = i + 1
+        # Filter the songs that the user has not heard yet 
+        # and make sure a song is not recommended twice (album vs single version)
+        if len(data[data['master_metadata_track_name'] == track_name]) == 0 and track_name not in tracks:
+            tracks.append(track_name)
+            artist.append(artists)
+            j = j + 1
+
+    app.logger.info(tracks)
+    app.logger.info(artist)
+
+    return tracks, artists
+
 
 # list with all song features
-FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'artist_enc', 'duration_ms']
+FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
+features = pd.read_csv('data/data_folder/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
 
 
 # Authenticate using the Spotify server
@@ -334,6 +366,9 @@ def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset
 
         top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
         fig_rf, result, rfc = do_random_forest(top_tracks, features)
+
+        #TODO remove when the list is implemented on the dashboard
+        new_top_songs(df, rfc, 10)
 
         return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
