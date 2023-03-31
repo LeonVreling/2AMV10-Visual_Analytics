@@ -198,7 +198,8 @@ app.layout = dbc.Container([
             dbc.Input(
                 id="filter-value",
                 type="text",
-                placeholder="Filter"
+                placeholder="Filter",
+                debounce=True # Only execute callback on enter or losing focus
             )
         ], width=2),
 
@@ -209,7 +210,7 @@ app.layout = dbc.Container([
         dbc.Col([
             dcc.Graph(
                 id="listening-duration-graph",
-                config = {"modeBarButtonsToRemove": ["lasso2d"]}
+                config = {"modeBarButtonsToRemove": ["lasso2d","pan2d","select2d"]}
             )
         ], width=7)
 
