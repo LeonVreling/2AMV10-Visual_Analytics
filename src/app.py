@@ -252,9 +252,12 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
-            dcc.Graph(
-                id='random-forest-graph',
-            )
+            dcc.Loading(
+                    id="loading",
+                    type="circle",
+                    color="#DDDDDD",
+                    children=dcc.Graph(id='random-forest-graph')
+                ),
         ], width=6),
 
         dbc.Col([
