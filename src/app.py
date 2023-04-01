@@ -57,38 +57,8 @@ def do_random_forest(tracks, features):
                         pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
-    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
-    result = result[result['count'] > 1]
-    fig = px.scatter(result, 
-            x='x', 
-            y='y', 
-            color='like_prob', 
-            color_continuous_scale='speed',
-            hover_data={'x':False, 
-                        'y':False,
-                        'like_prob':True,
-                        'master_metadata_album_artist_name':True,
-                        'master_metadata_track_name':True
-                        })
 
-
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
-
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-
-    fig.update_coloraxes(colorbar_title_text="Likeliness")
-
-    fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
-    fig.layout.margin.l = 0
-    fig.layout.margin.r = 0
-
-    fig.layout.height = 350 # TODO: Tune height of the graph
-
-    return fig, result, rfc
+    return result, rfc
 
 
 def lime_plot(track_name, artist, result, rfc):
@@ -353,7 +323,6 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
 
 @app.callback(
-    Output("random-forest-graph", "figure"),
     Output("model", "data"),
     Output("predictions", "data"),
     Input("full-dataset", "data"),
@@ -368,9 +337,72 @@ def train_random_forest(data):
 
     top_tracks = get_top_songs(df)
 
-    fig_rf, result, rfc = do_random_forest(top_tracks, features)
+    result, rfc = do_random_forest(top_tracks, features)
 
-    return fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+    return jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+
+
+@app.callback(
+    Output("random-forest-graph", "figure"),
+    Input("filtered-dataset", "data"),
+    Input("predictions", "data")
+)
+def show_random_forest(data, predictions):
+    df = pd.read_json(data)
+    result = pd.read_json(predictions, orient="index")
+
+    # Get only the results from the selected points
+    selected_points = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
+
+    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
+    result = result[result['count'] > 1]
+    fig = px.scatter(selected_points, 
+            x='x', 
+            y='y', 
+            color='like_prob', 
+            color_continuous_scale='speed',
+            hover_data={'x':False, 
+                        'y':False,
+                        'like_prob':True,
+                        'master_metadata_album_artist_name':True,
+                        'master_metadata_track_name':True
+                        })
+
+
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
+
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+
+    fig.update_coloraxes(colorbar_title_text="Likeliness")
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
+    fig.layout.height = 350 # TODO: Tune height of the graph
+
+
+    # app.logger.info(selected_points)
+
+    # # Filter out the unselected points
+    # fig.update_traces(
+    #     selectedpoints=[selected_points.index],
+    #     unselected={
+    #         "marker": {"opacity": 0.1},
+    #         # TODO: Remove the hover from unselected points
+    #     },
+    #     selected={
+    #         "marker": {"color": "red"},
+    #     }
+    # )
+
+    # app.logger.info(fig)
+
+    return fig
 
 
 @app.callback(
@@ -385,15 +417,15 @@ def display_top_tracks(data):
 
     layout = []
     for index, track in top_tracks.iterrows():
-        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            dbc.Col([
-                html.Img(src=album_cover)
-            ], width=2),
+            # dbc.Col([
+            #     html.Img(src=album_cover)
+            # ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
@@ -406,29 +438,29 @@ def display_top_tracks(data):
     return layout
 
 
-@app.callback(
-    Output("predicted-tracks", "children"),
-    Input("full-dataset", "data"),
-    Input("model", "data")
-)
-def predict_new_tracks(data, model):
+# @app.callback(
+#     Output("predicted-tracks", "children"),
+#     Input("full-dataset", "data"),
+#     Input("model", "data")
+# )
+# def predict_new_tracks(data, model):
     
-    df = pd.read_json(data)
-    rfc = jsonpickle.decode(model)
+#     df = pd.read_json(data)
+#     rfc = jsonpickle.decode(model)
 
-    AMOUNT_OF_PREDICTIONS = 10
+#     AMOUNT_OF_PREDICTIONS = 10
 
-    predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+#     predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
 
-    predicted_songs_list = []
+#     predicted_songs_list = []
 
-    # TODO: Make a nice layout to show the predicted top songs
-    for i in range(AMOUNT_OF_PREDICTIONS):
-        predicted_songs_list.append(
-            html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
-        )
+#     # TODO: Make a nice layout to show the predicted top songs
+#     for i in range(AMOUNT_OF_PREDICTIONS):
+#         predicted_songs_list.append(
+#             html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
+#         )
 
-    return html.Ul(children=predicted_songs_list)
+#     return html.Ul(children=predicted_songs_list)
 
 
 @app.callback(
