@@ -61,7 +61,7 @@ def do_random_forest(tracks, features):
     return result, rfc
 
 
-def lime_plot(track_name, artist, result, rfc):
+def lime_plot(track_names, artists, result, rfc):
     # Define lime explainer
     lime_explainer = LimeTabularExplainer(
         result[FEATURE_LIST],
@@ -73,23 +73,42 @@ def lime_plot(track_name, artist, result, rfc):
     )
 
     # Selected sample from random forest plot
-    sample = result.loc[(result['master_metadata_track_name'] == track_name) & (result['master_metadata_album_artist_name'] == artist)]
+    sample = result.loc[(result['master_metadata_track_name'].isin(track_names)) & (result['master_metadata_album_artist_name'].isin(artists))]
+
+    app.logger.info(sample)
 
     # Error catching
     if len(sample) == 0:
         return "Something went wrong, please try selecting a point again"
     
-    # Explain the sample
-    explanation = lime_explainer.explain_instance(
-        sample[FEATURE_LIST].iloc[0],
-        rfc.predict_proba,
-        num_features=len(FEATURE_LIST),
-        num_samples=100,
-        distance_metric="euclidean",
-    )
+    explenations = []
+    for _, element in sample.iterrows():
+        app.logger.info(element)
+        # Explain the sample
+        explanation = lime_explainer.explain_instance(
+            element[FEATURE_LIST],
+            rfc.predict_proba,
+            num_features=len(FEATURE_LIST),
+            num_samples=100,
+            distance_metric="euclidean",
+        )
+        explenations.append(explanation.as_list())
+
+    if len(explenations) > 1:
+        explained_features = []
+        reshaped_explenations = np.reshape(explenations, (-1, 2))
+        keys = np.unique(reshaped_explenations[:, 0])
+
+        # Calculate the average per key
+        for key in keys:
+            values = reshaped_explenations[reshaped_explenations[:, 0] == key, 1].astype(float)
+            average = np.mean(values)
+            explained_features.append([key, average])
+    else:
+        explained_features = explenations[0]
     
     # Create a barchart of the LIME features
-    df = pd.DataFrame(sorted(np.array(explanation.as_list()),key=lambda x: x[0]), columns=['Features', 'Values'])
+    df = pd.DataFrame(sorted(explained_features,key=lambda x: x[0]), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
@@ -253,31 +272,6 @@ app.layout = dbc.Container([
 ], style={"max-width": "100%", "paddingTop": "12px"})
 
 
-@app.callback(
-    Output('lime-graph', "children"),
-    Input("model", "data"),
-    Input("predictions", "data"),
-    Input("random-forest-graph", "clickData"),
-)
-def click(model, predictions, clickEvent):
-    if not clickEvent:
-        raise PreventUpdate
-
-    rfc = jsonpickle.decode(model)
-    result = pd.read_json(predictions, orient="index")
-
-    track_name = clickEvent['points'][0]['customdata'][2]
-    artist = clickEvent['points'][0]['customdata'][1]
-    fig = lime_plot(track_name, artist, result, rfc)
-
-    # Error handling
-    if type(fig) == str:
-        return html.P(fig)
-
-    fig.update_layout(title="<b> LIME plot for <b>" + track_name + "<b> by <b>" + artist)
-    return dcc.Graph(figure=fig)
-
-
 def get_top_songs(df):
 
     tracks = df[['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name']].copy()
@@ -389,6 +383,7 @@ def show_random_forest(data, predictions):
 
     fig.layout.height = 350 # TODO: Tune height of the graph
 
+    fig.update_layout(clickmode='event+select')
 
     # app.logger.info(selected_points)
 
@@ -440,6 +435,36 @@ def display_top_tracks(data):
         layout.append(song_tile)
 
     return layout
+
+
+@app.callback(
+    Output('lime-graph', "children"),
+    Input("model", "data"),
+    Input("predictions", "data"),
+    Input("random-forest-graph", "selectedData")
+)
+def display_lime_plot(model, predictions, selection):
+    if not selection:
+        raise PreventUpdate
+
+    rfc = jsonpickle.decode(model)
+    result = pd.read_json(predictions, orient="index")
+
+    selected_tracks = [point["customdata"][2] for point in selection["points"]]
+    selected_artists = [point["customdata"][1] for point in selection["points"]]
+
+    fig = lime_plot(selected_tracks, selected_artists, result, rfc)
+
+    # Error handling
+    if type(fig) == str:
+        return html.P(fig)
+    
+    if len(selected_tracks) == 1:
+        fig.update_layout(title="<b> LIME plot for <b>" + selected_tracks[0] + "<b> by <b>" + selected_artists[0])
+    else:
+        fig.update_layout(title="<b> LIME plot for selected cluster of <b>" + str(len(selected_tracks)) + "<b> songs <b>")
+
+    return dcc.Graph(figure=fig)
 
 
 # @app.callback(
