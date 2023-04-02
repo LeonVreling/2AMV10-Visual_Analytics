@@ -9,7 +9,6 @@ import spotipy
 from spotipy.oauth2 import SpotifyOAuth
 import os
 import json
-from math import floor, ceil
 import umap
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
@@ -58,38 +57,8 @@ def do_random_forest(tracks, features):
                         pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
     result = result.round({'like_prob': 4})
-    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
-    result = result[result['count'] > 1]
-    fig = px.scatter(result, 
-            x='x', 
-            y='y', 
-            color='like_prob', 
-            color_continuous_scale='speed',
-            hover_data={'x':False, 
-                        'y':False,
-                        'like_prob':True,
-                        'master_metadata_album_artist_name':True,
-                        'master_metadata_track_name':True
-                        })
 
-
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
-    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
-
-    fig.update_xaxes(visible=False)
-    fig.update_yaxes(visible=False)
-
-    fig.update_coloraxes(colorbar_title_text="Likeliness")
-
-    fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
-    fig.layout.margin.l = 0
-    fig.layout.margin.r = 0
-
-    fig.layout.height = 350 # TODO: Tune height of the graph
-
-    return fig, result, rfc
+    return result, rfc
 
 
 def lime_plot(track_name, artist, result, rfc):
@@ -233,6 +202,13 @@ app.layout = dbc.Container([
                 type="text",
                 placeholder="Filter",
                 debounce=True # Only execute callback on enter or losing focus
+            ),
+
+            dcc.Graph(
+                id="listening-duration-graph",
+                config = {
+                    "displayModeBar": False
+                }
             )
         ], width=2),
 
@@ -242,10 +218,7 @@ app.layout = dbc.Container([
         ], width=3),
 
         dbc.Col([
-            dcc.Graph(
-                id="listening-duration-graph",
-                config = {"modeBarButtonsToRemove": ["lasso2d","pan2d","select2d"]}
-            )
+            
         ], width=7)
 
     ]),
@@ -271,9 +244,11 @@ app.layout = dbc.Container([
     ]),
 
 
-    dcc.Store(id='dataset'),
+    dcc.Store(id='full-dataset'),
+    dcc.Store(id='filtered-dataset'),
     dcc.Store(id='model'),
-    dcc.Store(id='predictions')
+    dcc.Store(id='predictions'),
+    dcc.Store(id='temp')
 
 ], style={"max-width": "100%", "paddingTop": "12px"})
 
@@ -303,35 +278,7 @@ def click(model, predictions, clickEvent):
     return dcc.Graph(figure=fig)
 
 
-@app.callback(
-    Output("dataset", "data"),
-    Input("datasets-dropdown", "value")
-)
-def load_dataset(path):
-
-    # Load the data set
-    df = pd.read_csv(path)
-    df.drop_duplicates(inplace=True)
-
-    return df.to_json()
-
-
-def get_top_songs_range(df, start_range=None, end_range=None, range_column=None):
-
-    if start_range is not None:
-        if range_column == "year" or range_column == "hour":
-            start = ceil(start_range)
-            end = floor(end_range)
-            df = df[df[range_column].between(start, end)]
-        if range_column == "month":
-            months = df["month"].unique().tolist()
-
-            start_index = months.index(start_range[:7])
-            end_index = months.index(end_range[:7])
-
-            months_to_filter = months[start_index : end_index+1]
-
-            df = df[df[range_column].isin(months_to_filter)]
+def get_top_songs(df):
 
     tracks = df[['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name']].copy()
     counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
@@ -343,79 +290,146 @@ def get_top_songs_range(df, start_range=None, end_range=None, range_column=None)
 
 
 @app.callback(
-    Output("top-tracks", "children"),
-    Output("random-forest-graph", "figure"),
-    Output("model", "data"),
-    Output("predictions", "data"),
-    Output("predicted-tracks", "children"),
-    Input("dataset", "data"),
-    Input("listening-duration-graph", "relayoutData"),
-    Input("timespan-dropdown", "value"),
-    Input("filter-column", "value"),
-    Input("filter-value", "value"),
+    Output("full-dataset", "data"),
     Input("datasets-dropdown", "value")
 )
-def get_scale_graph(data, graph_events, timespan, filter_column, filter, dataset_dropdown):
+def load_data(path):
 
-    if graph_events == {}:
-        raise PreventUpdate
-
-    df = pd.read_json(data)
+    df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
-    # Only get the features of songs that the selected person has listened to
-    features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
-    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
-    features.drop_duplicates(inplace=True)
+    return df.to_json()
 
-    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
+
+@app.callback(
+    Output("filtered-dataset", "data"),
+    Input("datasets-dropdown", "value"),
+    Input("listening-duration-graph", "selectedData"),
+    Input("timespan-dropdown", "value"),
+    Input("filter-column", "value"),
+    Input("filter-value", "value")
+)
+def load_and_filter_data(path, selection, timespan, filter_column, filter):
+
+    df = pd.read_csv(path)
+    df.drop_duplicates(inplace=True)
+
     if filter is not None:
         if filter != "":
             df = df[df[filter_column] == filter]
 
-    # When the graph is first loaded or the scale is reset
-    if "xaxis.autorange" in graph_events or "autosize" in graph_events:
-        top_tracks = get_top_songs_range(df)
+    if selection is not None and selection['points'] != []:
+        selected_points = [point["x"] for point in selection['points']]
+        app.logger.info(selected_points)
+        df = df[df[timespan].isin(selected_points)]
 
-        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, features)
-
-        AMOUNT_OF_PREDICTIONS = 10
-
-        predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
-
-        predicted_songs_list = []
-
-        # TODO: Make a nice layout to show the predicted top songs
-        for i in range(AMOUNT_OF_PREDICTIONS):
-            predicted_songs_list.append(
-                html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
-            )
-
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index")), html.Ul(children=predicted_songs_list)
-
-    # When the user has resized the graph
-    if "xaxis.range[0]" in graph_events:
-        top_tracks = get_top_songs_range(df, graph_events["xaxis.range[0]"], graph_events["xaxis.range[1]"], timespan)
-
-        top_songs_layout = convert_to_top_tracks_list(top_tracks.head(5))
-        fig_rf, result, rfc = do_random_forest(top_tracks, features)
-
-        return top_songs_layout, fig_rf, jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+    return df.to_json()
 
 
-def convert_to_top_tracks_list(data):
+@app.callback(
+    Output("model", "data"),
+    Output("predictions", "data"),
+    Input("full-dataset", "data"),
+)
+def train_random_forest(data):
+    df = pd.read_json(data)
+
+    # Get the features of the songs that are in the dataset
+    features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
+    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    features.drop_duplicates(inplace=True)
+
+    top_tracks = get_top_songs(df)
+
+    result, rfc = do_random_forest(top_tracks, features)
+
+    return jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
+
+
+@app.callback(
+    Output("random-forest-graph", "figure"),
+    Input("filtered-dataset", "data"),
+    Input("predictions", "data")
+)
+def show_random_forest(data, predictions):
+    df = pd.read_json(data)
+    result = pd.read_json(predictions, orient="index")
+
+    # Get only the results from the selected points
+    selected_points = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
+
+    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
+    result = result[result['count'] > 1]
+    fig = px.scatter(selected_points, 
+            x='x', 
+            y='y', 
+            color='like_prob', 
+            color_continuous_scale='speed',
+            hover_data={'x':False, 
+                        'y':False,
+                        'like_prob':True,
+                        'master_metadata_album_artist_name':True,
+                        'master_metadata_track_name':True
+                        })
+
+
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
+    fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_track_name', 'Track Name')))
+
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+
+    fig.update_coloraxes(colorbar_title_text="Likeliness")
+
+    fig.layout.margin.b = 0
+    fig.layout.margin.t = 40
+    fig.layout.margin.l = 0
+    fig.layout.margin.r = 0
+
+    fig.layout.height = 350 # TODO: Tune height of the graph
+
+
+    # app.logger.info(selected_points)
+
+    # # Filter out the unselected points
+    # fig.update_traces(
+    #     selectedpoints=[selected_points.index],
+    #     unselected={
+    #         "marker": {"opacity": 0.1},
+    #         # TODO: Remove the hover from unselected points
+    #     },
+    #     selected={
+    #         "marker": {"color": "red"},
+    #     }
+    # )
+
+    # app.logger.info(fig)
+
+    return fig
+
+
+@app.callback(
+    Output("top-tracks", "children"),
+    Input("filtered-dataset", "data")
+)
+def display_top_tracks(data):
+    
+    df = pd.read_json(data)
+
+    top_tracks = get_top_songs(df).head(5)
+
     layout = []
-    for index, track in data.iterrows():
-        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+    for index, track in top_tracks.iterrows():
+        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            dbc.Col([
-                html.Img(src=album_cover)
-            ], width=2),
+            # dbc.Col([
+            #     html.Img(src=album_cover)
+            # ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
@@ -424,37 +438,58 @@ def convert_to_top_tracks_list(data):
         ])
 
         layout.append(song_tile)
+
     return layout
+
+
+# @app.callback(
+#     Output("predicted-tracks", "children"),
+#     Input("full-dataset", "data"),
+#     Input("model", "data")
+# )
+# def predict_new_tracks(data, model):
+    
+#     df = pd.read_json(data)
+#     rfc = jsonpickle.decode(model)
+
+#     AMOUNT_OF_PREDICTIONS = 10
+
+#     predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+
+#     predicted_songs_list = []
+
+#     # TODO: Make a nice layout to show the predicted top songs
+#     for i in range(AMOUNT_OF_PREDICTIONS):
+#         predicted_songs_list.append(
+#             html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
+#         )
+
+#     return html.Ul(children=predicted_songs_list)
 
 
 @app.callback(
     Output("listening-duration-graph", "figure"),
-    Input("dataset", "data"),
-    Input("timespan-dropdown", "value"),
-    Input("filter-column", "value"),
-    Input("filter-value", "value")
+    Input("datasets-dropdown", "value"),
+    Input("timespan-dropdown", "value")
 )
-def update_duration_listening_graph(data, timespan, filter_column, filter):
+def update_duration_listening_graph(path, timespan):
 
-    df = pd.read_json(data)
+    df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
-
-    # TODO Change filter such that the name of the artist doesn't needs to be exactly correct
-    if filter is not None:
-        if filter != "":
-            df = df[df[filter_column] == filter]
 
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
-    fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1, title='<b> Total duration per {} <b>'.format(timespan)) \
+    fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1) \
                 .update_xaxes(title = 'Date', visible = True, showticklabels = True) \
                 .update_yaxes(title = 'Total hours', visible = True, showticklabels = True, fixedrange = True)
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
+    fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
-    fig.layout.height = 350 # TODO: Tune height of the graph
+    fig.layout.height = 150 # TODO: Tune height of the graph
+
+    fig.update_layout(dragmode='select')
 
     return fig
 
