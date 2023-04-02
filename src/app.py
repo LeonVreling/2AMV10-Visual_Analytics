@@ -197,24 +197,17 @@ app.layout = dbc.Container([
                 clearable=False
             ),
 
-            html.Span("Group by:"),
-
-            dcc.Dropdown(
-                id="timespan-dropdown",
-                options=timespan_options,
-                value=timespan_options[0]["value"],
-                clearable=False
-            ),
-
             dbc.RadioItems(
-                # TODO: Make this radio button nicer, for instance with a slider
                 id="filter-column",
                 options=[
                     {"label": "Artist", "value": "master_metadata_album_artist_name"},
                     {"label": "Song Title", "value": "master_metadata_track_name"}
                 ],
-                value="master_metadata_album_artist_name"
+                value="master_metadata_album_artist_name",
+                inline=True
             ),
+
+            # TODO: Add a double slider to filter by the amount of streams
 
             dbc.Input(
                 id="filter-value",
@@ -228,6 +221,15 @@ app.layout = dbc.Container([
                 config = {
                     "displayModeBar": False
                 }
+            ),
+
+            html.Span("Group by:"),
+
+            dcc.Dropdown(
+                id="timespan-dropdown",
+                options=timespan_options,
+                value=timespan_options[0]["value"],
+                clearable=False
             )
         ], width=2),
 
@@ -385,22 +387,6 @@ def show_random_forest(data, predictions):
 
     fig.update_layout(clickmode='event+select')
 
-    # app.logger.info(selected_points)
-
-    # # Filter out the unselected points
-    # fig.update_traces(
-    #     selectedpoints=[selected_points.index],
-    #     unselected={
-    #         "marker": {"opacity": 0.1},
-    #         # TODO: Remove the hover from unselected points
-    #     },
-    #     selected={
-    #         "marker": {"color": "red"},
-    #     }
-    # )
-
-    # app.logger.info(fig)
-
     return fig
 
 
@@ -416,15 +402,15 @@ def display_top_tracks(data):
 
     layout = []
     for index, track in top_tracks.iterrows():
-        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            # dbc.Col([
-            #     html.Img(src=album_cover)
-            # ], width=2),
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
@@ -467,29 +453,29 @@ def display_lime_plot(model, predictions, selection):
     return dcc.Graph(figure=fig)
 
 
-# @app.callback(
-#     Output("predicted-tracks", "children"),
-#     Input("full-dataset", "data"),
-#     Input("model", "data")
-# )
-# def predict_new_tracks(data, model):
+@app.callback(
+    Output("predicted-tracks", "children"),
+    Input("full-dataset", "data"),
+    Input("model", "data")
+)
+def predict_new_tracks(data, model):
     
-#     df = pd.read_json(data)
-#     rfc = jsonpickle.decode(model)
+    df = pd.read_json(data)
+    rfc = jsonpickle.decode(model)
 
-#     AMOUNT_OF_PREDICTIONS = 10
+    AMOUNT_OF_PREDICTIONS = 10
 
-#     predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+    predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
 
-#     predicted_songs_list = []
+    predicted_songs_list = []
 
-#     # TODO: Make a nice layout to show the predicted top songs
-#     for i in range(AMOUNT_OF_PREDICTIONS):
-#         predicted_songs_list.append(
-#             html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
-#         )
+    # TODO: Make a nice layout to show the predicted top songs
+    for i in range(AMOUNT_OF_PREDICTIONS):
+        predicted_songs_list.append(
+            html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
+        )
 
-#     return html.Ul(children=predicted_songs_list)
+    return html.Ul(children=predicted_songs_list)
 
 
 @app.callback(
