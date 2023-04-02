@@ -214,18 +214,13 @@ app.layout = dbc.Container([
                 debounce=True # Only execute callback on enter or losing focus
             ),
 
-            html.Span("Amount of streams:"),
+            html.Span("Group by:"),
 
-            # TODO: Change padding on the sides of the slider from 25px to 5px
-            dcc.RangeSlider(
-                id="streams-slider",
-                min=0, 
-                max=30, # TODO: Set the maximum value based on the actual data
-                step=1,
-                marks=None,
-                value=[0, 30], # The initial values of the handles
-                tooltip={"placement": "bottom", "always_visible": True},
-                allowCross=False # Make the handles not able to cross
+            dcc.Dropdown(
+                id="timespan-dropdown",
+                options=timespan_options,
+                value=timespan_options[0]["value"],
+                clearable=False
             ),
 
             dcc.Graph(
@@ -235,14 +230,19 @@ app.layout = dbc.Container([
                 }
             ),
 
-            html.Span("Group by:"),
+            html.Span("Amount of streams:"),
 
-            dcc.Dropdown(
-                id="timespan-dropdown",
-                options=timespan_options,
-                value=timespan_options[0]["value"],
-                clearable=False
-            )
+            # TODO: Change padding on the sides of the slider from 25px to 5px
+            dcc.RangeSlider(
+                id="streams-slider",
+                min=0, 
+                max=1000, # This values gets overwritten by a callback
+                step=1,
+                marks=None,
+                value=[0, 1000], # The initial values of the handles
+                tooltip={"placement": "bottom", "always_visible": True},
+                allowCross=False # Make the handles not able to cross
+            )      
         ], width=2),
 
         dbc.Col([
@@ -279,11 +279,12 @@ app.layout = dbc.Container([
 
     dcc.Store(id='full-dataset'),
     dcc.Store(id='filtered-dataset'),
+    dcc.Store(id='filtered-dataset-by-streams'),
     dcc.Store(id='model'),
     dcc.Store(id='predictions'),
     dcc.Store(id='temp')
 
-], style={"max-width": "100%", "paddingTop": "12px"})
+], style={"max-width": "100%", "paddingTop": "6px"})
 
 
 def get_top_songs(df):
@@ -335,9 +336,27 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
 
 @app.callback(
+    Output("filtered-dataset-by-streams", "data"),
+    Input("filtered-dataset", "data"),
+    Input("streams-slider", "value"),
+    Input("streams-slider", "max")
+)
+def filter_data_by_streams(data, streams, max_streams):
+
+    df = pd.read_json(data)
+
+    if streams[0] != 0 or streams[1] != max_streams: # Prevent the filtering on initial loading
+        tracks_with_count = get_top_songs(df)
+        filtered_tracks_with_count = tracks_with_count.loc[tracks_with_count['count'].between(streams[0], streams[1]), 'spotify_track_uri'].tolist()
+        df = df[df["spotify_track_uri"].isin(filtered_tracks_with_count)]
+    
+    return df.to_json()
+
+
+@app.callback(
     Output("streams-slider", "max"),
     Output("streams-slider", "value"),
-    Input("full-dataset", "data")
+    Input("filtered-dataset", "data")
 )
 def get_highest_stream_count(data):
     df = pd.read_json(data)
@@ -368,7 +387,7 @@ def train_random_forest(data):
 
 @app.callback(
     Output("random-forest-graph", "figure"),
-    Input("filtered-dataset", "data"),
+    Input("filtered-dataset-by-streams", "data"),
     Input("predictions", "data")
 )
 def show_random_forest(data, predictions):
@@ -403,11 +422,11 @@ def show_random_forest(data, predictions):
     fig.update_coloraxes(colorbar_title_text="Likeliness")
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
+    fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
 
-    fig.layout.height = 350 # TODO: Tune height of the graph
+    fig.layout.height = 325 # TODO: Tune height of the graph
 
     fig.update_layout(clickmode='event+select')
 
@@ -522,7 +541,7 @@ def update_duration_listening_graph(path, timespan):
     fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
-    fig.layout.height = 150 # TODO: Tune height of the graph
+    fig.layout.height = 125 # TODO: Tune height of the graph
 
     fig.update_layout(dragmode='select')
 
