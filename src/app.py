@@ -207,13 +207,25 @@ app.layout = dbc.Container([
                 inline=True
             ),
 
-            # TODO: Add a double slider to filter by the amount of streams
-
             dbc.Input(
                 id="filter-value",
                 type="text",
                 placeholder="Filter",
                 debounce=True # Only execute callback on enter or losing focus
+            ),
+
+            html.Span("Amount of streams:"),
+
+            # TODO: Change padding on the sides of the slider from 25px to 5px
+            dcc.RangeSlider(
+                id="streams-slider",
+                min=0, 
+                max=30, # TODO: Set the maximum value based on the actual data
+                step=1,
+                marks=None,
+                value=[0, 30], # The initial values of the handles
+                tooltip={"placement": "bottom", "always_visible": True},
+                allowCross=False # Make the handles not able to cross
             ),
 
             dcc.Graph(
