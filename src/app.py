@@ -197,23 +197,14 @@ app.layout = dbc.Container([
                 clearable=False
             ),
 
-            html.Span("Group by:"),
-
-            dcc.Dropdown(
-                id="timespan-dropdown",
-                options=timespan_options,
-                value=timespan_options[0]["value"],
-                clearable=False
-            ),
-
             dbc.RadioItems(
-                # TODO: Make this radio button nicer, for instance with a slider
                 id="filter-column",
                 options=[
                     {"label": "Artist", "value": "master_metadata_album_artist_name"},
                     {"label": "Song Title", "value": "master_metadata_track_name"}
                 ],
-                value="master_metadata_album_artist_name"
+                value="master_metadata_album_artist_name",
+                inline=True
             ),
 
             dbc.Input(
@@ -223,12 +214,35 @@ app.layout = dbc.Container([
                 debounce=True # Only execute callback on enter or losing focus
             ),
 
+            html.Span("Group by:"),
+
+            dcc.Dropdown(
+                id="timespan-dropdown",
+                options=timespan_options,
+                value=timespan_options[0]["value"],
+                clearable=False
+            ),
+
             dcc.Graph(
                 id="listening-duration-graph",
                 config = {
                     "displayModeBar": False
                 }
-            )
+            ),
+
+            html.Span("Amount of streams:"),
+
+            # TODO: Change padding on the sides of the slider from 25px to 5px
+            dcc.RangeSlider(
+                id="streams-slider",
+                min=0, 
+                max=1000, # This values gets overwritten by a callback
+                step=1,
+                marks=None,
+                value=[0, 1000], # The initial values of the handles
+                tooltip={"placement": "bottom", "always_visible": True},
+                allowCross=False # Make the handles not able to cross
+            )      
         ], width=2),
 
         dbc.Col([
@@ -265,11 +279,12 @@ app.layout = dbc.Container([
 
     dcc.Store(id='full-dataset'),
     dcc.Store(id='filtered-dataset'),
+    dcc.Store(id='filtered-dataset-by-streams'),
     dcc.Store(id='model'),
     dcc.Store(id='predictions'),
     dcc.Store(id='temp')
 
-], style={"max-width": "100%", "paddingTop": "12px"})
+], style={"max-width": "100%", "paddingTop": "6px"})
 
 
 def get_top_songs(df):
@@ -321,6 +336,36 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
 
 @app.callback(
+    Output("filtered-dataset-by-streams", "data"),
+    Input("filtered-dataset", "data"),
+    Input("streams-slider", "value"),
+    Input("streams-slider", "max")
+)
+def filter_data_by_streams(data, streams, max_streams):
+
+    df = pd.read_json(data)
+
+    if streams[0] != 0 or streams[1] != max_streams: # Prevent the filtering on initial loading
+        tracks_with_count = get_top_songs(df)
+        filtered_tracks_with_count = tracks_with_count.loc[tracks_with_count['count'].between(streams[0], streams[1]), 'spotify_track_uri'].tolist()
+        df = df[df["spotify_track_uri"].isin(filtered_tracks_with_count)]
+    
+    return df.to_json()
+
+
+@app.callback(
+    Output("streams-slider", "max"),
+    Output("streams-slider", "value"),
+    Input("filtered-dataset", "data")
+)
+def get_highest_stream_count(data):
+    df = pd.read_json(data)
+    streams = get_top_songs(df)
+    max_count = streams.head(1)["count"][0]
+    return max_count, [0, max_count]
+
+
+@app.callback(
     Output("model", "data"),
     Output("predictions", "data"),
     Input("full-dataset", "data"),
@@ -342,7 +387,7 @@ def train_random_forest(data):
 
 @app.callback(
     Output("random-forest-graph", "figure"),
-    Input("filtered-dataset", "data"),
+    Input("filtered-dataset-by-streams", "data"),
     Input("predictions", "data")
 )
 def show_random_forest(data, predictions):
@@ -377,29 +422,13 @@ def show_random_forest(data, predictions):
     fig.update_coloraxes(colorbar_title_text="Likeliness")
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
+    fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
 
-    fig.layout.height = 350 # TODO: Tune height of the graph
+    fig.layout.height = 325 # TODO: Tune height of the graph
 
     fig.update_layout(clickmode='event+select')
-
-    # app.logger.info(selected_points)
-
-    # # Filter out the unselected points
-    # fig.update_traces(
-    #     selectedpoints=[selected_points.index],
-    #     unselected={
-    #         "marker": {"opacity": 0.1},
-    #         # TODO: Remove the hover from unselected points
-    #     },
-    #     selected={
-    #         "marker": {"color": "red"},
-    #     }
-    # )
-
-    # app.logger.info(fig)
 
     return fig
 
@@ -416,15 +445,15 @@ def display_top_tracks(data):
 
     layout = []
     for index, track in top_tracks.iterrows():
-        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            # dbc.Col([
-            #     html.Img(src=album_cover)
-            # ], width=2),
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
@@ -467,29 +496,29 @@ def display_lime_plot(model, predictions, selection):
     return dcc.Graph(figure=fig)
 
 
-# @app.callback(
-#     Output("predicted-tracks", "children"),
-#     Input("full-dataset", "data"),
-#     Input("model", "data")
-# )
-# def predict_new_tracks(data, model):
+@app.callback(
+    Output("predicted-tracks", "children"),
+    Input("full-dataset", "data"),
+    Input("model", "data")
+)
+def predict_new_tracks(data, model):
     
-#     df = pd.read_json(data)
-#     rfc = jsonpickle.decode(model)
+    df = pd.read_json(data)
+    rfc = jsonpickle.decode(model)
 
-#     AMOUNT_OF_PREDICTIONS = 10
+    AMOUNT_OF_PREDICTIONS = 10
 
-#     predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
+    predicted_tracks, predicted_artists = new_top_songs(df, rfc, AMOUNT_OF_PREDICTIONS)
 
-#     predicted_songs_list = []
+    predicted_songs_list = []
 
-#     # TODO: Make a nice layout to show the predicted top songs
-#     for i in range(AMOUNT_OF_PREDICTIONS):
-#         predicted_songs_list.append(
-#             html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
-#         )
+    # TODO: Make a nice layout to show the predicted top songs
+    for i in range(AMOUNT_OF_PREDICTIONS):
+        predicted_songs_list.append(
+            html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
+        )
 
-#     return html.Ul(children=predicted_songs_list)
+    return html.Ul(children=predicted_songs_list)
 
 
 @app.callback(
@@ -512,7 +541,7 @@ def update_duration_listening_graph(path, timespan):
     fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
-    fig.layout.height = 150 # TODO: Tune height of the graph
+    fig.layout.height = 125 # TODO: Tune height of the graph
 
     fig.update_layout(dragmode='select')
 
