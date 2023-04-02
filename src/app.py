@@ -22,7 +22,6 @@ from sklearn.preprocessing import LabelEncoder
 
 
 def do_random_forest(tracks, features):
-    #TODO ? slider voor minimaal aantal streams per liedje
     #TODO - kijken naar threshold voor liked
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
 
@@ -40,7 +39,7 @@ def do_random_forest(tracks, features):
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=500, max_depth=50, random_state=0)
     # Train the random forest model on train set
-    rfc.fit(df_predict[FEATURE_LIST], df_predict[target])
+    rfc.fit(df_predict[FEATURE_LIST].values, df_predict[target].values)
 
     data = df_predict[FEATURE_LIST]
     y_pred = rfc.predict_proba(data)
@@ -119,6 +118,31 @@ def lime_plot(track_names, artists, result, rfc):
 
     fig.layout.height = 350 # TODO: Tune height of the graph
 
+    return fig
+
+def pc_plot(track_names, artists, result, rfc):
+    sample = result.loc[(result['master_metadata_track_name'].isin(track_names)) & (result['master_metadata_album_artist_name'].isin(artists))]
+    if result.shape[0] < 1:
+        return px.scatter()
+    y_pred = rfc.predict_proba(sample[FEATURE_LIST])
+    sample['pred'] = y_pred[:,1]
+
+    fig = px.parallel_coordinates(sample[FEATURE_LIST + ['pred']], color='pred',
+                             color_continuous_scale=px.colors.sequential.speed,
+                             color_continuous_midpoint=0.5)
+    
+    return fig
+
+def full_pc_plot(result, rfc):
+    if result.shape[0] < 1:
+        return px.scatter()
+    y_pred = rfc.predict_proba(result[FEATURE_LIST])
+    result['pred'] = y_pred[:,1]
+
+    fig = px.parallel_coordinates(result[FEATURE_LIST + ['pred']], color='pred',
+                             color_continuous_scale=px.colors.sequential.speed,
+                             color_continuous_midpoint=0.5)
+    
     return fig
 
 def new_top_songs(data, rfc, top_count):
@@ -276,6 +300,13 @@ app.layout = dbc.Container([
         ], width=3)
     ]),
 
+    dbc.Row([
+        dbc.Col([
+            dcc.Graph(
+                id='PC-graph',
+            )
+        ], width=6),
+    ]),
 
     dcc.Store(id='full-dataset'),
     dcc.Store(id='filtered-dataset'),
@@ -404,6 +435,7 @@ def show_random_forest(data, predictions):
             y='y', 
             color='like_prob', 
             color_continuous_scale='speed',
+            color_continuous_midpoint=0.5,
             hover_data={'x':False, 
                         'y':False,
                         'like_prob':True,
@@ -519,6 +551,41 @@ def predict_new_tracks(data, model):
         )
 
     return html.Ul(children=predicted_songs_list)
+
+@app.callback(
+    Output('PC-graph', "figure"),
+    Input("model", "data"),
+    Input("predictions", "data"),
+    Input("filtered-dataset", "data"),
+    Input("random-forest-graph", "selectedData")
+)
+def display_pc_plot(model, predictions, data, selection):
+    if not selection:
+        df = pd.read_json(data)
+        rfc = jsonpickle.decode(model)
+        result = pd.read_json(predictions, orient="index")
+        selected_points = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
+        fig = full_pc_plot(selected_points, rfc)
+        return fig    
+
+    rfc = jsonpickle.decode(model)
+    result = pd.read_json(predictions, orient="index")
+
+    selected_tracks = [point["customdata"][2] for point in selection["points"]]
+    selected_artists = [point["customdata"][1] for point in selection["points"]]
+
+    # Error handling
+    if len(selected_tracks) < 1 or len(selected_artists):
+        fig = px.scatter(0, 0)
+        return html.P(fig)
+
+    fig = pc_plot(selected_tracks, selected_artists, result, rfc)
+
+    # Error handling
+    if type(fig) == str:
+        return html.P(fig)
+
+    return fig
 
 
 @app.callback(
