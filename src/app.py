@@ -335,6 +335,18 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
 
 @app.callback(
+    Output("streams-slider", "max"),
+    Output("streams-slider", "value"),
+    Input("full-dataset", "data")
+)
+def get_highest_stream_count(data):
+    df = pd.read_json(data)
+    streams = get_top_songs(df)
+    max_count = streams.head(1)["count"][0]
+    return max_count, [0, max_count]
+
+
+@app.callback(
     Output("model", "data"),
     Output("predictions", "data"),
     Input("full-dataset", "data"),
