@@ -10,15 +10,11 @@ from spotipy.oauth2 import SpotifyOAuth
 import os
 import json
 import umap
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 from lime.lime_tabular import LimeTabularExplainer
 import jsonpickle
-from sklearn.preprocessing import LabelEncoder
 
 
 def do_random_forest(tracks, features):
@@ -150,8 +146,8 @@ def new_top_songs(data, rfc, top_count):
     # Continue until there are top_count unique songs recommended
     while j < top_count:
         # Retrieve track name and corresponding artist from Spotipy
-        track_name = sp.track(sort_pred[i])['name']
-        artist = sp.track(sort_pred[i])['album']['artists'][0]['name']
+        track_name = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_track_name'].values[0]
+        artist = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_album_artist_name'].values[0]
         i = i + 1
         # Filter the songs that the user has not heard yet 
         # and make sure a song is not recommended twice (album vs single version)
@@ -169,7 +165,6 @@ def new_top_songs(data, rfc, top_count):
 # list with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
 all_features = pd.read_csv('data/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
-
 
 # Authenticate using the Spotify server
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae10bdba19854",
@@ -384,8 +379,8 @@ def train_random_forest(data):
     df = pd.read_json(data)
 
     # Get the features of the songs that are in the dataset
-    features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
-    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    features = pd.merge(all_features.drop(columns=['master_metadata_album_artist_name', 'master_metadata_track_name']), df, indicator=True, how='inner', on="spotify_track_uri")
+    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url', 'master_metadata_album_artist_name', 'master_metadata_track_name'], axis=1)
     features.drop_duplicates(inplace=True)
 
     top_tracks = get_top_songs(df)
@@ -456,15 +451,15 @@ def display_top_tracks(data):
 
     layout = []
     for index, track in top_tracks.iterrows():
-        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            dbc.Col([
-                html.Img(src=album_cover)
-            ], width=2),
+            # dbc.Col([
+            #     html.Img(src=album_cover)
+            # ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
