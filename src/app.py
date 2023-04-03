@@ -282,7 +282,16 @@ app.layout = dbc.Container([
     dcc.Store(id='filtered-dataset-by-streams'),
     dcc.Store(id='model'),
     dcc.Store(id='predictions'),
-    dcc.Store(id='temp')
+    dcc.Store(id='temp'),
+
+    dbc.Toast(
+            "With the current filters, there are no songs in your dataset. Please change your filters and try again.",
+            id="empty-dataset-warning",
+            header="Empty dataset",
+            is_open=False,
+            icon="danger",
+            style={"position": "fixed", "top": 10, "right": 10, "width": 350},
+        ),
 
 ], style={"max-width": "100%", "paddingTop": "6px"})
 
@@ -312,6 +321,7 @@ def load_data(path):
 
 @app.callback(
     Output("filtered-dataset", "data"),
+    Output("empty-dataset-warning", "is_open"),
     Input("datasets-dropdown", "value"),
     Input("listening-duration-graph", "selectedData"),
     Input("timespan-dropdown", "value"),
@@ -333,7 +343,10 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
             selected_points = [point[:-3] for point in selected_points]
         df = df[df[timespan].isin(selected_points)]
 
-    return df.to_json()
+    if df.empty:
+        return df.to_json(), True
+
+    return df.to_json(), False
 
 
 @app.callback(
@@ -345,6 +358,9 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 def filter_data_by_streams(data, streams, max_streams):
 
     df = pd.read_json(data)
+
+    if df.empty:
+        raise PreventUpdate
 
     if streams[0] != 0 or streams[1] != max_streams: # Prevent the filtering on initial loading
         tracks_with_count = get_top_songs(df)
@@ -361,6 +377,10 @@ def filter_data_by_streams(data, streams, max_streams):
 )
 def get_highest_stream_count(data):
     df = pd.read_json(data)
+
+    if df.empty:
+        raise PreventUpdate
+    
     streams = get_top_songs(df)
     max_count = streams.head(1)["count"][0]
     return max_count, [0, max_count]
@@ -441,6 +461,9 @@ def show_random_forest(data, predictions):
 def display_top_tracks(data):
     
     df = pd.read_json(data)
+
+    if df.empty:
+        raise PreventUpdate
 
     top_tracks = get_top_songs(df).head(5)
 
