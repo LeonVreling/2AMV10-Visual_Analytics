@@ -100,7 +100,7 @@ def lime_plot(track_names, artists, result, rfc):
         explained_features = explenations[0]
     
     # Create a barchart of the LIME features
-    df = pd.DataFrame(sorted(explained_features,key=lambda x: x[0]), columns=['Features', 'Values'])
+    df = pd.DataFrame(sorted(explained_features,key=lambda x: x[0], reverse=True), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
@@ -117,10 +117,12 @@ def lime_plot(track_names, artists, result, rfc):
 def pc_plot(result, rfc):
     y_pred = rfc.predict_proba(result[FEATURE_LIST])[:,1]
     result['pred'] = y_pred
+
+    dimensions = sorted(FEATURE_LIST)
     
     fig = px.parallel_coordinates(result,
                                   color='pred',
-                                  dimensions=FEATURE_LIST + [("pred")], # [feature 1, ..., feature n, pred]
+                                  dimensions=dimensions + [("pred")],
                                   color_continuous_scale=px.colors.sequential.speed,
                                   color_continuous_midpoint=0.5)
     
@@ -451,15 +453,15 @@ def display_top_tracks(data):
 
     layout = []
     for index, track in top_tracks.iterrows():
-        # album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+        album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
             ], width=1, class_name="p-0"),
 
-            # dbc.Col([
-            #     html.Img(src=album_cover)
-            # ], width=2),
+            dbc.Col([
+                html.Img(src=album_cover)
+            ], width=2),
 
             dbc.Col([
                 html.H5(track["master_metadata_track_name"]),
@@ -526,6 +528,7 @@ def predict_new_tracks(data, model):
 
     return html.Ul(children=predicted_songs_list)
 
+
 @app.callback(
     Output('PC-graph', "figure"),
     Input("model", "data"),
@@ -547,7 +550,16 @@ def display_pc_plot(model, predictions, data, selection):
 
         filtered_tracks = filtered_tracks.loc[(result['master_metadata_track_name'].isin(selected_tracks)) & (result['master_metadata_album_artist_name'].isin(selected_artists))]
 
+    # Print the full PC plot if nothing is selected in the random forest plot
+    if filtered_tracks.empty:
+        return pc_plot(result, rfc)
+
     fig = pc_plot(filtered_tracks, rfc)
+
+    fig.layout.margin.l = 30
+    fig.layout.margin.b = 30
+
+    fig.layout.height = 325 # TODO: Tune height of the graph
 
     # Error handling
     if type(fig) == str:
