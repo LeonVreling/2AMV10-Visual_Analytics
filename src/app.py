@@ -74,15 +74,12 @@ def lime_plot(track_names, artists, result, rfc):
     # Selected sample from random forest plot
     sample = result.loc[(result['master_metadata_track_name'].isin(track_names)) & (result['master_metadata_album_artist_name'].isin(artists))]
 
-    app.logger.info(sample)
-
     # Error catching
     if len(sample) == 0:
         return "Something went wrong, please try selecting a point again"
     
     explenations = []
     for _, element in sample.iterrows():
-        app.logger.info(element)
         # Explain the sample
         explanation = lime_explainer.explain_instance(
             element[FEATURE_LIST],
@@ -120,30 +117,19 @@ def lime_plot(track_names, artists, result, rfc):
 
     return fig
 
-def pc_plot(track_names, artists, result, rfc):
-    sample = result.loc[(result['master_metadata_track_name'].isin(track_names)) & (result['master_metadata_album_artist_name'].isin(artists))]
-    if result.shape[0] < 1:
-        return px.scatter()
-    y_pred = rfc.predict_proba(sample[FEATURE_LIST])
-    sample['pred'] = y_pred[:,1]
 
-    fig = px.parallel_coordinates(sample[FEATURE_LIST + ['pred']], color='pred',
-                             color_continuous_scale=px.colors.sequential.speed,
-                             color_continuous_midpoint=0.5)
+def pc_plot(result, rfc):
+    y_pred = rfc.predict_proba(result[FEATURE_LIST])[:,1]
+    result['pred'] = y_pred
+    
+    fig = px.parallel_coordinates(result,
+                                  color='pred',
+                                  dimensions=FEATURE_LIST + [("pred")], # [feature 1, ..., feature n, pred]
+                                  color_continuous_scale=px.colors.sequential.speed,
+                                  color_continuous_midpoint=0.5)
     
     return fig
 
-def full_pc_plot(result, rfc):
-    if result.shape[0] < 1:
-        return px.scatter()
-    y_pred = rfc.predict_proba(result[FEATURE_LIST])
-    result['pred'] = y_pred[:,1]
-
-    fig = px.parallel_coordinates(result[FEATURE_LIST + ['pred']], color='pred',
-                             color_continuous_scale=px.colors.sequential.speed,
-                             color_continuous_midpoint=0.5)
-    
-    return fig
 
 def new_top_songs(data, rfc, top_count):
     # Keep the songs that the user has not listened to
@@ -275,7 +261,9 @@ app.layout = dbc.Container([
         ], width=3),
 
         dbc.Col([
-            
+            dcc.Graph(
+                id='PC-graph',
+            )
         ], width=7)
 
     ]),
@@ -298,14 +286,6 @@ app.layout = dbc.Container([
             html.H4("Predicted liked songs"),
             html.Div(id="predicted-tracks")
         ], width=3)
-    ]),
-
-    dbc.Row([
-        dbc.Col([
-            dcc.Graph(
-                id='PC-graph',
-            )
-        ], width=6),
     ]),
 
     dcc.Store(id='full-dataset'),
@@ -360,7 +340,6 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
     if selection is not None and selection['points'] != []:
         selected_points = [point["x"] for point in selection['points']]
-        app.logger.info(selected_points)
         df = df[df[timespan].isin(selected_points)]
 
     return df.to_json()
@@ -560,26 +539,20 @@ def predict_new_tracks(data, model):
     Input("random-forest-graph", "selectedData")
 )
 def display_pc_plot(model, predictions, data, selection):
-    if not selection:
-        df = pd.read_json(data)
-        rfc = jsonpickle.decode(model)
-        result = pd.read_json(predictions, orient="index")
-        selected_points = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
-        fig = full_pc_plot(selected_points, rfc)
-        return fig    
 
     rfc = jsonpickle.decode(model)
     result = pd.read_json(predictions, orient="index")
 
-    selected_tracks = [point["customdata"][2] for point in selection["points"]]
-    selected_artists = [point["customdata"][1] for point in selection["points"]]
+    df = pd.read_json(data)
+    filtered_tracks = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
 
-    # Error handling
-    if len(selected_tracks) < 1 or len(selected_artists):
-        fig = px.scatter(0, 0)
-        return html.P(fig)
+    if selection:
+        selected_tracks = [point["customdata"][2] for point in selection["points"]]
+        selected_artists = [point["customdata"][1] for point in selection["points"]]
 
-    fig = pc_plot(selected_tracks, selected_artists, result, rfc)
+        filtered_tracks = filtered_tracks.loc[(result['master_metadata_track_name'].isin(selected_tracks)) & (result['master_metadata_album_artist_name'].isin(selected_artists))]
+
+    fig = pc_plot(filtered_tracks, rfc)
 
     # Error handling
     if type(fig) == str:
