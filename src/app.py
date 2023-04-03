@@ -178,7 +178,7 @@ def new_top_songs(data, rfc, top_count):
 
 # list with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
-all_features = pd.read_csv('data/wrong_features.csv').rename(columns={"uri": "spotify_track_uri"})
+all_features = pd.read_csv('data/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
 
 # Authenticate using the Spotify server
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae10bdba19854",
