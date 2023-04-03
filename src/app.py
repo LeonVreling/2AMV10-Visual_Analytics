@@ -329,7 +329,8 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
     if selection is not None and selection['points'] != []:
         selected_points = [point["x"] for point in selection['points']]
-        app.logger.info(selected_points)
+        if timespan == "month": # Remove the day from the selected values to keep only YYYY-MM
+            selected_points = [point[:-3] for point in selected_points]
         df = df[df[timespan].isin(selected_points)]
 
     return df.to_json()
