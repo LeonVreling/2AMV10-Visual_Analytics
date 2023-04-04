@@ -454,6 +454,7 @@ def show_random_forest(data, predictions):
     fig.update_yaxes(visible=False)
 
     # TODO: Find a way to hide the colorbar
+    fig.update_coloraxes(colorbar_title_text="Likeliness")
 
     fig.layout.margin.b = 0
     fig.layout.margin.t = 40
@@ -586,6 +587,8 @@ def display_pc_plot(model, predictions, data, selection):
     fig = pc_plot(filtered_tracks, rfc)
 
     fig.update_layout(title="<b>Parallel coordinates plot for selected songs</b>")
+
+    fig.update_coloraxes(colorbar_title_text="Likeliness")
 
     fig.layout.margin.l = 30
     fig.layout.margin.b = 30
