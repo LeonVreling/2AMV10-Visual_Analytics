@@ -258,14 +258,26 @@ app.layout = dbc.Container([
         ], width=3),
 
         dbc.Col([
-            dcc.Graph(
-                id='PC-graph',
-            )
-        ], width=7)
+            html.P("Select a point in the graph to see why the prediciton was made")
+        ], width=4, id='lime-graph'),
+
+        dbc.Col([
+            html.H4("Recommended songs"),
+            html.Div(id="predicted-tracks")
+        ], width=3)
 
     ]),
 
     dbc.Row([
+        dbc.Col([
+                dcc.Loading(
+                        id="loading",
+                        type="circle",
+                        color="#DDDDDD",
+                        children=dcc.Graph(id='PC-graph')
+                    ),
+            ], width=7),
+
         dbc.Col([
             dcc.Loading(
                     id="loading",
@@ -273,16 +285,7 @@ app.layout = dbc.Container([
                     color="#DDDDDD",
                     children=dcc.Graph(id='random-forest-graph')
                 ),
-        ], width=6),
-
-        dbc.Col([
-            html.P("Select a point in the graph to see why the prediciton was made")
-        ], width=3, id='lime-graph'),
-
-        dbc.Col([
-            html.H4("Predicted liked songs"),
-            html.Div(id="predicted-tracks")
-        ], width=3)
+        ], width=5)
     ]),
 
     dcc.Store(id='full-dataset'),
@@ -441,6 +444,7 @@ def show_random_forest(data, predictions):
                         'master_metadata_track_name':True
                         })
 
+    fig.update_layout(title="<b>Clustering and prediction of songs</b>")
 
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('like_prob', 'Likeliness')))
     fig.for_each_trace(lambda t: t.update(hovertemplate = t.hovertemplate.replace('master_metadata_album_artist_name', 'Artist')))
@@ -449,10 +453,10 @@ def show_random_forest(data, predictions):
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
 
-    fig.update_coloraxes(colorbar_title_text="Likeliness")
+    # TODO: Find a way to hide the colorbar
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 0
+    fig.layout.margin.t = 40
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
 
@@ -522,9 +526,9 @@ def display_lime_plot(model, predictions, selection):
         return html.P(fig)
     
     if len(selected_tracks) == 1:
-        fig.update_layout(title="<b> LIME plot for <b>" + selected_tracks[0] + "<b> by <b>" + selected_artists[0])
+        fig.update_layout(title="<b>LIME plot for " + selected_tracks[0] + " by " + selected_artists[0] + "</b>")
     else:
-        fig.update_layout(title="<b> LIME plot for selected cluster of <b>" + str(len(selected_tracks)) + "<b> songs <b>")
+        fig.update_layout(title="<b>LIME plot for selected cluster of " + str(len(selected_tracks)) + " songs</b>")
 
     return dcc.Graph(figure=fig)
 
@@ -581,8 +585,11 @@ def display_pc_plot(model, predictions, data, selection):
 
     fig = pc_plot(filtered_tracks, rfc)
 
+    fig.update_layout(title="<b>Parallel coordinates plot for selected songs</b>")
+
     fig.layout.margin.l = 30
     fig.layout.margin.b = 30
+    fig.layout.margin.t = 80
 
     fig.layout.height = 325 # TODO: Tune height of the graph
 
