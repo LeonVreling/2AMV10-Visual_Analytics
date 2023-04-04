@@ -10,19 +10,14 @@ from spotipy.oauth2 import SpotifyOAuth
 import os
 import json
 import umap
-import pandas as pd
 from sklearn.ensemble import RandomForestClassifier
-# from sklearn.model_selection import train_test_split
-# from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
 from sklearn.preprocessing import StandardScaler
 import numpy as np
 from lime.lime_tabular import LimeTabularExplainer
 import jsonpickle
-from sklearn.preprocessing import LabelEncoder
 
 
 def do_random_forest(tracks, features):
-    #TODO ? slider voor minimaal aantal streams per liedje
     #TODO - kijken naar threshold voor liked
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
 
@@ -40,7 +35,7 @@ def do_random_forest(tracks, features):
     # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
     rfc = RandomForestClassifier(n_estimators=500, max_depth=50, random_state=0)
     # Train the random forest model on train set
-    rfc.fit(df_predict[FEATURE_LIST], df_predict[target])
+    rfc.fit(df_predict[FEATURE_LIST].values, df_predict[target].values)
 
     data = df_predict[FEATURE_LIST]
     y_pred = rfc.predict_proba(data)
@@ -75,15 +70,12 @@ def lime_plot(track_names, artists, result, rfc):
     # Selected sample from random forest plot
     sample = result.loc[(result['master_metadata_track_name'].isin(track_names)) & (result['master_metadata_album_artist_name'].isin(artists))]
 
-    app.logger.info(sample)
-
     # Error catching
     if len(sample) == 0:
         return "Something went wrong, please try selecting a point again"
     
     explenations = []
     for _, element in sample.iterrows():
-        app.logger.info(element)
         # Explain the sample
         explanation = lime_explainer.explain_instance(
             element[FEATURE_LIST],
@@ -108,7 +100,7 @@ def lime_plot(track_names, artists, result, rfc):
         explained_features = explenations[0]
     
     # Create a barchart of the LIME features
-    df = pd.DataFrame(sorted(explained_features,key=lambda x: x[0]), columns=['Features', 'Values'])
+    df = pd.DataFrame(sorted(explained_features,key=lambda x: x[0], reverse=True), columns=['Features', 'Values'])
     df['Values'] = df['Values'].apply(lambda x: float(x))
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
@@ -120,6 +112,22 @@ def lime_plot(track_names, artists, result, rfc):
     fig.layout.height = 350 # TODO: Tune height of the graph
 
     return fig
+
+
+def pc_plot(result, rfc):
+    y_pred = rfc.predict_proba(result[FEATURE_LIST])[:,1]
+    result['pred'] = y_pred
+
+    dimensions = sorted(FEATURE_LIST)
+    
+    fig = px.parallel_coordinates(result,
+                                  color='pred',
+                                  dimensions=dimensions + [("pred")],
+                                  color_continuous_scale=px.colors.sequential.speed,
+                                  color_continuous_midpoint=0.5)
+    
+    return fig
+
 
 def new_top_songs(data, rfc, top_count):
     # Keep the songs that the user has not listened to
@@ -140,8 +148,8 @@ def new_top_songs(data, rfc, top_count):
     # Continue until there are top_count unique songs recommended
     while j < top_count:
         # Retrieve track name and corresponding artist from Spotipy
-        track_name = sp.track(sort_pred[i])['name']
-        artist = sp.track(sort_pred[i])['album']['artists'][0]['name']
+        track_name = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_track_name'].values[0]
+        artist = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_album_artist_name'].values[0]
         i = i + 1
         # Filter the songs that the user has not heard yet 
         # and make sure a song is not recommended twice (album vs single version)
@@ -159,7 +167,6 @@ def new_top_songs(data, rfc, top_count):
 # list with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
 all_features = pd.read_csv('data/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
-
 
 # Authenticate using the Spotify server
 sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae10bdba19854",
@@ -251,7 +258,9 @@ app.layout = dbc.Container([
         ], width=3),
 
         dbc.Col([
-            
+            dcc.Graph(
+                id='PC-graph',
+            )
         ], width=7)
 
     ]),
@@ -275,7 +284,6 @@ app.layout = dbc.Container([
             html.Div(id="predicted-tracks")
         ], width=3)
     ]),
-
 
     dcc.Store(id='full-dataset'),
     dcc.Store(id='filtered-dataset'),
@@ -395,8 +403,8 @@ def train_random_forest(data):
     df = pd.read_json(data)
 
     # Get the features of the songs that are in the dataset
-    features = pd.merge(all_features, df, indicator=True, how='inner', on="spotify_track_uri")
-    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url'], axis=1)
+    features = pd.merge(all_features.drop(columns=['master_metadata_album_artist_name', 'master_metadata_track_name']), df, indicator=True, how='inner', on="spotify_track_uri")
+    features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url', 'master_metadata_album_artist_name', 'master_metadata_track_name'], axis=1)
     features.drop_duplicates(inplace=True)
 
     top_tracks = get_top_songs(df)
@@ -425,6 +433,7 @@ def show_random_forest(data, predictions):
             y='y', 
             color='like_prob', 
             color_continuous_scale='speed',
+            color_continuous_midpoint=0.5,
             hover_data={'x':False, 
                         'y':False,
                         'like_prob':True,
@@ -543,6 +552,45 @@ def predict_new_tracks(data, model):
         )
 
     return html.Ul(children=predicted_songs_list)
+
+
+@app.callback(
+    Output('PC-graph', "figure"),
+    Input("model", "data"),
+    Input("predictions", "data"),
+    Input("filtered-dataset", "data"),
+    Input("random-forest-graph", "selectedData")
+)
+def display_pc_plot(model, predictions, data, selection):
+
+    rfc = jsonpickle.decode(model)
+    result = pd.read_json(predictions, orient="index")
+
+    df = pd.read_json(data)
+    filtered_tracks = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
+
+    if selection:
+        selected_tracks = [point["customdata"][2] for point in selection["points"]]
+        selected_artists = [point["customdata"][1] for point in selection["points"]]
+
+        filtered_tracks = filtered_tracks.loc[(result['master_metadata_track_name'].isin(selected_tracks)) & (result['master_metadata_album_artist_name'].isin(selected_artists))]
+
+    # Print the full PC plot if nothing is selected in the random forest plot
+    if filtered_tracks.empty:
+        return pc_plot(result, rfc)
+
+    fig = pc_plot(filtered_tracks, rfc)
+
+    fig.layout.margin.l = 30
+    fig.layout.margin.b = 30
+
+    fig.layout.height = 325 # TODO: Tune height of the graph
+
+    # Error handling
+    if type(fig) == str:
+        return html.P(fig)
+
+    return fig
 
 
 @app.callback(
