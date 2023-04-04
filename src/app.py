@@ -105,7 +105,7 @@ def lime_plot(track_names, artists, result, rfc):
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 40
+    fig.layout.margin.t = 20
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
 
@@ -270,22 +270,22 @@ app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
+            dcc.Loading(
+                    id="loading2",
+                    type="circle",
+                    color="#DDDDDD",
+                    children=dcc.Graph(id='random-forest-graph')
+                ),
+        ], width=5),
+
+        dbc.Col([
                 dcc.Loading(
                         id="loading",
                         type="circle",
                         color="#DDDDDD",
                         children=dcc.Graph(id='PC-graph')
                     ),
-            ], width=7),
-
-        dbc.Col([
-            dcc.Loading(
-                    id="loading",
-                    type="circle",
-                    color="#DDDDDD",
-                    children=dcc.Graph(id='random-forest-graph')
-                ),
-        ], width=5)
+        ], width=7)        
     ]),
 
     dcc.Store(id='full-dataset'),
@@ -588,7 +588,8 @@ def display_pc_plot(model, predictions, data, selection):
 
     fig.update_layout(title="<b>Parallel coordinates plot for selected songs</b>")
 
-    fig.update_coloraxes(colorbar_title_text="Likeliness")
+    # fig.update_coloraxes(colorbar_title_text="Likeliness")
+    fig.update(layout_coloraxis_showscale=False)
 
     fig.layout.margin.l = 30
     fig.layout.margin.b = 30
