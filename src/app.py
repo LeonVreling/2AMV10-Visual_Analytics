@@ -562,7 +562,7 @@ def predict_new_tracks(data, model):
     Output('PC-graph', "figure"),
     Input("model", "data"),
     Input("predictions", "data"),
-    Input("filtered-dataset", "data"),
+    Input("filtered-dataset-by-streams", "data"),
     Input("random-forest-graph", "selectedData")
 )
 def display_pc_plot(model, predictions, data, selection):
