@@ -105,7 +105,7 @@ def lime_plot(track_names, artists, result, rfc):
     fig = px.bar(df, x='Values', y='Features', color_discrete_sequence=px.colors.qualitative.Pastel1, orientation='h', barmode='relative')
 
     fig.layout.margin.b = 0
-    fig.layout.margin.t = 20
+    fig.layout.margin.t = 40
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
 
