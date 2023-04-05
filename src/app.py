@@ -290,7 +290,8 @@ app.layout = dbc.Container([
 
     dcc.Store(id='full-dataset'),
     dcc.Store(id='filtered-dataset'),
-    dcc.Store(id='filtered-dataset-by-streams'),
+    dcc.Store(id='filtered-dataset-by-time'),
+    dcc.Store(id='filtered-dataset-by-time-streams'),
     dcc.Store(id='model'),
     dcc.Store(id='predictions'),
     dcc.Store(id='temp'),
@@ -334,12 +335,10 @@ def load_data(path):
     Output("filtered-dataset", "data"),
     Output("empty-dataset-warning", "is_open"),
     Input("datasets-dropdown", "value"),
-    Input("listening-duration-graph", "selectedData"),
-    Input("timespan-dropdown", "value"),
     Input("filter-column", "value"),
     Input("filter-value", "value")
 )
-def load_and_filter_data(path, selection, timespan, filter_column, filter):
+def load_and_filter_data(path, filter_column, filter):
 
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
@@ -348,12 +347,6 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
         if filter != "":
             df = df[df[filter_column] == filter]
 
-    if selection is not None and selection['points'] != []:
-        selected_points = [point["x"] for point in selection['points']]
-        if timespan == "month": # Remove the day from the selected values to keep only YYYY-MM
-            selected_points = [point[:-3] for point in selected_points]
-        df = df[df[timespan].isin(selected_points)]
-
     if df.empty:
         return df.to_json(), True
 
@@ -361,8 +354,30 @@ def load_and_filter_data(path, selection, timespan, filter_column, filter):
 
 
 @app.callback(
-    Output("filtered-dataset-by-streams", "data"),
+    Output("filtered-dataset-by-time", "data"),
     Input("filtered-dataset", "data"),
+    Input("listening-duration-graph", "selectedData"),
+    Input("timespan-dropdown", "value"),    
+)
+def filter_data_by_time(data, selection, timespan):
+
+    df = pd.read_json(data)
+
+    if df.empty:
+        raise PreventUpdate
+
+    if selection is not None and selection['points'] != []:
+        selected_points = [point["x"] for point in selection['points']]
+        if timespan == "month": # Remove the day from the selected values to keep only YYYY-MM
+            selected_points = [point[:-3] for point in selected_points]
+        df = df[df[timespan].isin(selected_points)]
+    
+    return df.to_json()
+
+
+@app.callback(
+    Output("filtered-dataset-by-time-streams", "data"),
+    Input("filtered-dataset-by-time", "data"),
     Input("streams-slider", "value"),
     Input("streams-slider", "max")
 )
@@ -384,7 +399,7 @@ def filter_data_by_streams(data, streams, max_streams):
 @app.callback(
     Output("streams-slider", "max"),
     Output("streams-slider", "value"),
-    Input("filtered-dataset", "data")
+    Input("filtered-dataset-by-time", "data")
 )
 def get_highest_stream_count(data):
     df = pd.read_json(data)
@@ -419,7 +434,7 @@ def train_random_forest(data):
 
 @app.callback(
     Output("random-forest-graph", "figure"),
-    Input("filtered-dataset-by-streams", "data"),
+    Input("filtered-dataset-by-time-streams", "data"),
     Input("predictions", "data")
 )
 def show_random_forest(data, predictions):
@@ -470,7 +485,7 @@ def show_random_forest(data, predictions):
 
 @app.callback(
     Output("top-tracks", "children"),
-    Input("filtered-dataset", "data")
+    Input("filtered-dataset-by-time", "data")
 )
 def display_top_tracks(data):
     
@@ -563,7 +578,7 @@ def predict_new_tracks(data, model):
     Output('PC-graph', "figure"),
     Input("model", "data"),
     Input("predictions", "data"),
-    Input("filtered-dataset-by-streams", "data"),
+    Input("filtered-dataset-by-time-streams", "data"),
     Input("random-forest-graph", "selectedData")
 )
 def display_pc_plot(model, predictions, data, selection):
@@ -606,12 +621,12 @@ def display_pc_plot(model, predictions, data, selection):
 
 @app.callback(
     Output("listening-duration-graph", "figure"),
-    Input("datasets-dropdown", "value"),
+    Input("filtered-dataset", "data"),
     Input("timespan-dropdown", "value")
 )
-def update_duration_listening_graph(path, timespan):
+def update_duration_listening_graph(data, timespan):
 
-    df = pd.read_csv(path)
+    df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
 
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
