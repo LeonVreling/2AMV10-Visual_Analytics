@@ -6,7 +6,7 @@ from os import listdir
 # Initialize an empty list to store dataframes
 dfs = []
 
-FILE_NAME = "data_leon"
+FILE_NAME = "data_leon" # TODO: Change the file name to equal the folder name
 FILE_LOCATION = 'data/{}/'.format(FILE_NAME)
 files = [f for f in listdir(FILE_LOCATION) if f.startswith('endsong_')]
 print(files)
@@ -18,7 +18,6 @@ for file in files:
         data = json.load(f)
         df_temp = pd.DataFrame.from_dict(data)
         dfs.append(df_temp)
-#f.close()
 
 # Merge dataframes to one dataframe
 df = pd.concat(dfs, ignore_index=True)
