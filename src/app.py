@@ -18,36 +18,44 @@ import jsonpickle
 
 
 def do_random_forest(tracks, features):
-    #TODO - kijken naar threshold voor liked
+
+    # TODO: Look at a threshold to label a song as "liked"
+    LIKED_THRESHOLD = 20
+    
     df_complete = pd.merge(tracks, features, on="spotify_track_uri")
 
-    tracks['liked'] = tracks['count'] > 20 # liked=True when > threshold
+    tracks['liked'] = tracks['count'] > LIKED_THRESHOLD
     df_predict = pd.merge(df_complete, tracks[['spotify_track_uri', 'liked']], on=['spotify_track_uri'])
 
     # Define the target column of the model
-    target = 'liked'                #could be genre?
+    target = 'liked'
 
     if len(df_predict) < 2: 
         fig = px.scatter()
         fig.update_layout(title="<b> There are too few samples for a random forest prediction <b>")
         return fig, pd.DataFrame(), 0
 
-    # Instantiate a random forest classifier with 100 trees and a maximum depth of 5
+    # Instantiate a random forest classifier
     rfc = RandomForestClassifier(n_estimators=500, max_depth=50, random_state=0)
+
     # Train the random forest model on train set
     rfc.fit(df_predict[FEATURE_LIST].values, df_predict[target].values)
 
+    # Predict the probability of liking a song
     data = df_predict[FEATURE_LIST]
     y_pred = rfc.predict_proba(data)
+
     # Error catching
     if y_pred.shape[1] < 2:
         fig = px.scatter()
         fig.update_layout(title="<b> There are too few samples for a random forest prediction <b>")
         return fig, pd.DataFrame(), 0
     
+    # Do dimensionality reduction
     reducer = umap.UMAP(random_state=0, init='random')
     scaled_data = StandardScaler().fit_transform(data)
     embedding = reducer.fit_transform(scaled_data)
+
     result = pd.concat([df_predict.reset_index(drop=True), 
                         pd.DataFrame(y_pred[:,1], columns=['like_prob'])], axis=1)
     result = pd.concat([result, pd.DataFrame(embedding, columns=['x', 'y'])], axis=1)
@@ -57,6 +65,7 @@ def do_random_forest(tracks, features):
 
 
 def lime_plot(track_names, artists, result, rfc):
+
     # Define lime explainer
     lime_explainer = LimeTabularExplainer(
         result[FEATURE_LIST],
@@ -74,9 +83,9 @@ def lime_plot(track_names, artists, result, rfc):
     if len(sample) == 0:
         return "Something went wrong, please try selecting a point again"
     
+    # Explain the selected samples
     explenations = []
     for _, element in sample.iterrows():
-        # Explain the sample
         explanation = lime_explainer.explain_instance(
             element[FEATURE_LIST],
             rfc.predict_proba,
@@ -115,6 +124,8 @@ def lime_plot(track_names, artists, result, rfc):
 
 
 def pc_plot(result, rfc):
+
+    # Predict the probability of liking a song 
     y_pred = rfc.predict_proba(result[FEATURE_LIST])[:,1]
     result['pred'] = y_pred
 
@@ -133,10 +144,10 @@ def new_top_songs(data, rfc, top_count):
     # Keep the songs that the user has not listened to
     X_test = pd.merge(all_features, data, indicator=True, how='outer').query('_merge=="left_only"').drop('_merge', axis=1)
 
-    # Make predictions on the not yet heard songs
+    # Predict the probability of liking the new songs
     y_pred = rfc.predict_proba(X_test[FEATURE_LIST])
 
-    # Sort on highest like probability
+    # Sort on highest like-probability
     sort_pred = [x for _, x in sorted(zip(y_pred[:,0], list(X_test['spotify_track_uri'])))]
 
     # Create lists for top tracks and corresponding artists
@@ -145,12 +156,14 @@ def new_top_songs(data, rfc, top_count):
 
     i = 0
     j = len(tracks)
-    # Continue until there are top_count unique songs recommended
+
+    # Find the top_count unique song recommondations
     while j < top_count:
-        # Retrieve track name and corresponding artist from Spotipy
+        # Retrieve track name and corresponding artist
         track_name = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_track_name'].values[0]
         artist = X_test[X_test['spotify_track_uri'] == sort_pred[i]]['master_metadata_album_artist_name'].values[0]
         i = i + 1
+
         # Filter the songs that the user has not heard yet 
         # and make sure a song is not recommended twice (album vs single version)
         if len(data[data['master_metadata_track_name'] == track_name]) == 0 and track_name not in tracks:
@@ -158,13 +171,10 @@ def new_top_songs(data, rfc, top_count):
             artists.append(artist)
             j = j + 1
 
-    app.logger.info(tracks)
-    app.logger.info(artists)
-
     return tracks, artists
 
 
-# list with all song features
+# List with all song features
 FEATURE_LIST = ['danceability','energy','key','loudness','mode','speechiness','acousticness','instrumentalness','liveness','valence','tempo', 'time_signature', 'duration_ms']
 all_features = pd.read_csv('data/data_features.csv').rename(columns={"uri": "spotify_track_uri"})
 
@@ -174,13 +184,11 @@ sp = spotipy.Spotify(auth_manager=SpotifyOAuth(client_id="fc126aaa02334aae871ae1
                                                redirect_uri="http://localhost:8085/callback/",
                                                scope="user-library-read, user-top-read"))
 
-
+# Create the Dash application
 app = Dash(__name__, external_stylesheets=[dbc.themes.BOOTSTRAP, dbc.icons.FONT_AWESOME])
 app.title = "SpotiFacts"
 
-
-### Visualisation of personal listening over time
-# Getting the datasets
+# Load the datasets from their designated folder
 data_files = []
 for data_folder in [folder for folder in os.listdir("data") if "." not in folder]:
     for file in os.listdir("data/{}".format(data_folder)):
@@ -190,11 +198,13 @@ for data_folder in [folder for folder in os.listdir("data") if "." not in folder
 # Setting the various options for the timespan
 timespan_options = [{"value": "year", "label": "per year"}, {"value": "month", "label": "per month"}, {"value": "hour", "label": "per hour of the day"}]
 
-
+# Creating the layout of the dashboard
 app.layout = dbc.Container([
 
     dbc.Row([
         dbc.Col([
+    
+            # Selection of dataset
             html.Span("Dataset:"),
 
             dcc.Dropdown(
@@ -204,6 +214,7 @@ app.layout = dbc.Container([
                 clearable=False
             ),
 
+            # Filter on artist or song title
             dbc.RadioItems(
                 id="filter-column",
                 options=[
@@ -221,6 +232,7 @@ app.layout = dbc.Container([
                 debounce=True # Only execute callback on enter or losing focus
             ),
 
+            # Timespan for the frequency barchart
             html.Span("Group by:"),
 
             dcc.Dropdown(
@@ -237,6 +249,7 @@ app.layout = dbc.Container([
                 }
             ),
 
+            # Slider for the amount of streams to visualise in the scatter plot
             html.Span("Amount of streams:"),
 
             # TODO: Change padding on the sides of the slider from 25px to 5px
@@ -252,15 +265,18 @@ app.layout = dbc.Container([
             )      
         ], width=2),
 
+        # List of top 5 songs with the current filter
         dbc.Col([
             html.H4("Your top songs"),
             html.Div(id="top-tracks")
         ], width=3),
 
+        # LIME plot for the scatter plot
         dbc.Col([
             html.P("Select a point in the graph to see why the prediciton was made")
         ], width=4, id='lime-graph'),
 
+        # Recommended new song list by the random forest model
         dbc.Col([
             html.H4("Recommended songs"),
             html.Div(id="predicted-tracks")
@@ -269,6 +285,8 @@ app.layout = dbc.Container([
     ]),
 
     dbc.Row([
+
+        # Scatter plot with random forest predictions and clustering
         dbc.Col([
             dcc.Loading(
                     id="loading2",
@@ -278,6 +296,7 @@ app.layout = dbc.Container([
                 ),
         ], width=5),
 
+        # Parallel Coordinates plot
         dbc.Col([
                 dcc.Loading(
                         id="loading",
@@ -296,6 +315,7 @@ app.layout = dbc.Container([
     dcc.Store(id='predictions'),
     dcc.Store(id='temp'),
 
+    # Error message that will appear if the filters have no results
     dbc.Toast(
             "With the current filters, there are no songs in your dataset. Please change your filters and try again.",
             id="empty-dataset-warning",
@@ -309,13 +329,19 @@ app.layout = dbc.Container([
 
 
 def get_top_songs(df):
-
     tracks = df[['spotify_track_uri','master_metadata_track_name', 'master_metadata_album_artist_name', 'master_metadata_album_album_name']].copy()
+
+    # Count how often a uri appears in the dataset
     counts = df['spotify_track_uri'].value_counts(sort=False).reset_index()
     tracks = tracks.drop_duplicates().reset_index(drop=True)
+
+    # Add this count to the dataset
     tracks['count'] = counts['spotify_track_uri']
+
+    # Sort the dataset on the count
     tracks.sort_values(by=['count'], ascending=False, inplace=True)
     tracks.reset_index(drop=True, inplace=True)
+
     return tracks
 
 
@@ -325,6 +351,7 @@ def get_top_songs(df):
 )
 def load_data(path):
 
+    # Load the dataset from the selected user out of the designated folder
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
@@ -340,13 +367,16 @@ def load_data(path):
 )
 def load_and_filter_data(path, filter_column, filter):
 
+    # Load the dataset from the selected user out of the designated folder
     df = pd.read_csv(path)
     df.drop_duplicates(inplace=True)
 
+    # Apply the artist or song title filter
     if filter is not None:
         if filter != "":
             df = df[df[filter_column] == filter]
 
+    # Raise the "empty dataset" warning if the filter leaves no results
     if df.empty:
         return df.to_json(), True
 
@@ -361,15 +391,20 @@ def load_and_filter_data(path, filter_column, filter):
 )
 def filter_data_by_time(data, selection, timespan):
 
+    # Load the filtered dataset from the store
     df = pd.read_json(data)
 
     if df.empty:
         raise PreventUpdate
 
+    # Filter the timespan based on only moments selected in the frequency barchart
     if selection is not None and selection['points'] != []:
         selected_points = [point["x"] for point in selection['points']]
-        if timespan == "month": # Remove the day from the selected values to keep only YYYY-MM
+
+        # Remove the day from the selected values to keep only YYYY-MM
+        if timespan == "month": 
             selected_points = [point[:-3] for point in selected_points]
+
         df = df[df[timespan].isin(selected_points)]
     
     return df.to_json()
@@ -383,11 +418,13 @@ def filter_data_by_time(data, selection, timespan):
 )
 def filter_data_by_streams(data, streams, max_streams):
 
+    # Load the filtered dataset from the store    
     df = pd.read_json(data)
 
     if df.empty:
         raise PreventUpdate
 
+    # FIlter the dataset based on the count of streams
     if streams[0] != 0 or streams[1] != max_streams: # Prevent the filtering on initial loading
         tracks_with_count = get_top_songs(df)
         filtered_tracks_with_count = tracks_with_count.loc[tracks_with_count['count'].between(streams[0], streams[1]), 'spotify_track_uri'].tolist()
@@ -402,13 +439,18 @@ def filter_data_by_streams(data, streams, max_streams):
     Input("filtered-dataset-by-time", "data")
 )
 def get_highest_stream_count(data):
+
+    # Load the filtered dataset from the store
     df = pd.read_json(data)
 
     if df.empty:
         raise PreventUpdate
     
+    # Calculate the amount of times the most listened track was streamed
     streams = get_top_songs(df)
     max_count = streams.head(1)["count"][0]
+
+    # Set the values to be used for the streams slider
     return max_count, [0, max_count]
 
 
@@ -418,6 +460,9 @@ def get_highest_stream_count(data):
     Input("full-dataset", "data"),
 )
 def train_random_forest(data):
+
+    # Load the full dataset from the store
+    # TODO: See if this can be made quicker by loading directly from file
     df = pd.read_json(data)
 
     # Get the features of the songs that are in the dataset
@@ -425,10 +470,13 @@ def train_random_forest(data):
     features = features[all_features.columns].drop(['Unnamed: 0', 'id', 'track_href', 'analysis_url', 'master_metadata_album_artist_name', 'master_metadata_track_name'], axis=1)
     features.drop_duplicates(inplace=True)
 
+    # Get the stream counts of all the songs
     top_tracks = get_top_songs(df)
 
+    # Make the random forest and do the predictions
     result, rfc = do_random_forest(top_tracks, features)
 
+    # Save the model and the predicted results
     return jsonpickle.encode(rfc), json.dumps(result.to_dict("index"))
 
 
@@ -438,14 +486,14 @@ def train_random_forest(data):
     Input("predictions", "data")
 )
 def show_random_forest(data, predictions):
+
+    # Load the fully filtered dataset and the predictions from the store
     df = pd.read_json(data)
     result = pd.read_json(predictions, orient="index")
 
-    # Get only the results from the selected points
+    # Get only the predictions from the fully filtered points
     selected_points = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
 
-    #TODO ? af laten hangen van eventuele slider of helemaal weghalen
-    result = result[result['count'] > 1]
     fig = px.scatter(selected_points, 
             x='x', 
             y='y', 
@@ -468,7 +516,6 @@ def show_random_forest(data, predictions):
     fig.update_xaxes(visible=False)
     fig.update_yaxes(visible=False)
 
-    # TODO: Find a way to hide the colorbar
     fig.update_coloraxes(colorbar_title_text="Likeliness")
 
     fig.layout.margin.b = 0
@@ -489,16 +536,25 @@ def show_random_forest(data, predictions):
 )
 def display_top_tracks(data):
     
+    # Load the filtered dataset from the store
+    # TODO: See if we want to also update this with the stream counts slider
     df = pd.read_json(data)
 
     if df.empty:
         raise PreventUpdate
+    
+    AMOUNT_OF_TOP_TRACKS = 5
 
-    top_tracks = get_top_songs(df).head(5)
+    # Calculate the most streamed tracks in the filtered dataset
+    top_tracks = get_top_songs(df).head(AMOUNT_OF_TOP_TRACKS)
 
+    # Add the top songs to a nice layout
     layout = []
     for index, track in top_tracks.iterrows():
+
+        # Get the album cover from the spotipy API service
         album_cover = sp.track(track["spotify_track_uri"][14:])["album"]["images"][-1]["url"]
+
         song_tile = dbc.Row([
             dbc.Col([
                 html.H3("#{}".format(index+1))
@@ -529,12 +585,15 @@ def display_lime_plot(model, predictions, selection):
     if not selection:
         raise PreventUpdate
 
+    # Load the model and the predictions
     rfc = jsonpickle.decode(model)
     result = pd.read_json(predictions, orient="index")
 
+    # Get the selected tracks from the scatter plot
     selected_tracks = [point["customdata"][2] for point in selection["points"]]
     selected_artists = [point["customdata"][1] for point in selection["points"]]
 
+    # Construct the LIME plot for the features
     fig = lime_plot(selected_tracks, selected_artists, result, rfc)
 
     # Error handling
@@ -556,6 +615,8 @@ def display_lime_plot(model, predictions, selection):
 )
 def predict_new_tracks(data, model):
     
+    # Load the full dataset and the model from the store
+    # TODO: See if this can be made quicker by loading the dataset directly from file [like above]
     df = pd.read_json(data)
     rfc = jsonpickle.decode(model)
 
@@ -565,7 +626,7 @@ def predict_new_tracks(data, model):
 
     predicted_songs_list = []
 
-    # TODO: Make a nice layout to show the predicted top songs
+    # TODO: Make a nice(r) layout to show the predicted top songs
     for i in range(AMOUNT_OF_PREDICTIONS):
         predicted_songs_list.append(
             html.Li(f"{predicted_tracks[i]} - {predicted_artists[i]}")
@@ -583,9 +644,11 @@ def predict_new_tracks(data, model):
 )
 def display_pc_plot(model, predictions, data, selection):
 
+    # Load the model and the predictions from the store
     rfc = jsonpickle.decode(model)
     result = pd.read_json(predictions, orient="index")
 
+    # Load the filtered dataset and filter the predictions based on it
     df = pd.read_json(data)
     filtered_tracks = result[result["spotify_track_uri"].isin(df["spotify_track_uri"])]
 
@@ -595,15 +658,18 @@ def display_pc_plot(model, predictions, data, selection):
 
         filtered_tracks = filtered_tracks.loc[(result['master_metadata_track_name'].isin(selected_tracks)) & (result['master_metadata_album_artist_name'].isin(selected_artists))]
 
-    # Print the full PC plot if nothing is selected in the random forest plot
+    # Show the full PC plot if nothing is selected in the random forest plot, else display the filtered tracks
     if filtered_tracks.empty:
-        return pc_plot(result, rfc)
+        fig = pc_plot(result, rfc)
+    else:
+        fig = pc_plot(filtered_tracks, rfc)
 
-    fig = pc_plot(filtered_tracks, rfc)
+    # Error handling
+    if type(fig) == str:
+        return html.P(fig)
 
-    fig.update_layout(title="<b>Parallel coordinates plot for selected songs</b>")
+    fig.update_layout(title="<b>Parallel coordinates plot for the selected songs</b>")
 
-    # fig.update_coloraxes(colorbar_title_text="Likeliness")
     fig.update(layout_coloraxis_showscale=False)
 
     fig.layout.margin.l = 30
@@ -611,10 +677,6 @@ def display_pc_plot(model, predictions, data, selection):
     fig.layout.margin.t = 80
 
     fig.layout.height = 325 # TODO: Tune height of the graph
-
-    # Error handling
-    if type(fig) == str:
-        return html.P(fig)
 
     return fig
 
@@ -626,9 +688,11 @@ def display_pc_plot(model, predictions, data, selection):
 )
 def update_duration_listening_graph(data, timespan):
 
+    # Load the filtered dataset from the store
     df = pd.read_json(data)
     df.drop_duplicates(inplace=True)
 
+    # Calculate the new frequencies based on the selected timespan
     duration = df.groupby(timespan)['ms_played'].sum().reset_index(name = 'Total duration')
     duration['hours'] = ((duration['Total duration'] / 1000) / 60) / 60
     fig = px.bar(duration, x=timespan, y='hours', color_discrete_sequence=px.colors.qualitative.Pastel1) \
@@ -639,6 +703,7 @@ def update_duration_listening_graph(data, timespan):
     fig.layout.margin.t = 0
     fig.layout.margin.l = 0
     fig.layout.margin.r = 0
+
     fig.layout.height = 125 # TODO: Tune height of the graph
 
     fig.update_layout(dragmode='select')
